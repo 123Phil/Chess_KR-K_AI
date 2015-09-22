@@ -54,11 +54,14 @@ The game summary is saved to file in Portable Game Notation.
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <sstream>
+#include <iomanip>
 #include <vector>
 #include <cstdlib>
 #include <cstdio>
 #include <cctype>
 #include <exception>
+#include <utility>
 using namespace std;
 
 #define VERBOSE_RESULTS true
@@ -116,6 +119,7 @@ state get_initial_state();
 state get_state_from_file();
 state get_state_from_stdin();
 unsigned char convert_PGN_to_char(std::string square);
+string convert_move_to_PGN(state s, unsigned char move, bool player_x);
 void verify_lam(state s);
 
 
@@ -128,14 +132,37 @@ Output:	returns a char, indicating the best move
 			char %8 = row, (1-8 zero-based)
 */
 unsigned char moveX(state s) {
-	// list valid moves
-	// get heuristic of each move
-	// rank moves
-	// recurse??
-	// return move
+	unsigned char move = 0;
+	vector<unsigned char> moves = list_all_moves_x(s);
+	if (moves.size() == 0) {
+		cout << "No moves found for X...\n";
+		exit(EXIT_FAILURE);
+	}
+	vector< pair<int, unsigned char> > ranked_moves;
+	int rank;
+	for (int i=0; i < (int)moves.size(); i++) {
+		rank = heuristicX(make_move(s, moves[i], true));
+		ranked_moves.push_back(make_pair(rank, moves[i]));
+	}
+	
+	sort(ranked_moves.begin(), ranked_moves.end());
+	reverse(ranked_moves.begin(), ranked_moves.end());
 
-	//TODO
-	return 7;
+	if (VERBOSE_RESULTS) {
+		string move_str;
+		unsigned char move;
+		for (int i=0; i < (int)ranked_moves.size(); i++) {
+			rank = ranked_moves[i].first;
+			move = ranked_moves[i].second;
+			move_str = convert_move_to_PGN(s, move, true);
+			//cout << "Move: " << move_str << "  h(n): " << rank << endl;
+		}
+	}
+
+	// recurse??
+
+	move = ranked_moves[0].second;
+	return move;
 }
 
 
@@ -146,14 +173,37 @@ Output:	returns a char, indicating the best move
 			char %8 = row, (1-8 zero-based)
 */
 unsigned char moveY(state s) {
-	// list valid moves
-	// get heuristic of each move
-	// rank moves
-	// recurse??
-	// return move
+	unsigned char move = 0;
+	vector<unsigned char> moves = list_all_moves_y(s);
+	if (moves.size() == 0) {
+		cout << "No moves found for Y...\n";
+		return 255;
+		// exit(EXIT_FAILURE);
+	}
+	vector< pair<int, unsigned char> > ranked_moves;
+	int rank;
+	for (int i=0; i < (int)moves.size(); i++) {
+		rank = heuristicY(make_move(s, moves[i], false));
+		ranked_moves.push_back(make_pair(rank, moves[i]));
+	}
+	
+	sort(ranked_moves.begin(), ranked_moves.end());
+	reverse(ranked_moves.begin(), ranked_moves.end());
 
-	//TODO
-	return 7;
+	if (VERBOSE_RESULTS) {
+		string move_str;
+		unsigned char move;
+		for (int i=0; i < (int)ranked_moves.size(); i++) {
+			rank = ranked_moves[i].first;
+			move = ranked_moves[i].second;
+			move_str = convert_move_to_PGN(s, move, false);
+			//cout << "Move: " << move_str << "  h(n): " << rank << endl;
+		}
+	}
+
+	// recurse??
+	move = ranked_moves[0].second;
+	return move;
 }
 
 
@@ -167,8 +217,7 @@ Output:	int - the value of the board for player Y
 int heuristicX(state s) {
 	int h = 0;
 
-	//TODO
-
+	h = s.K + s.R;
 	return h;
 }
 
@@ -183,8 +232,8 @@ Output:	int - the value of the board for player Y
 int heuristicY(state s) {
 	int h = 0;
 
-	//TODO
-
+	
+	h = s.k;
 	return h;
 }
 
@@ -505,10 +554,56 @@ Input:	state s - initial state of the board
 Output:	int - outcome of the game
 */
 int test_play(state s, int max_turns) {
+	int num_turns = 0;
+	unsigned char move;
+	string x_move_str, y_move_str;
+	vector<string> summary;
+	stringstream ss;
+	while (num_turns < max_turns) {
+		//Player X goes first.
+		move = moveX(s);
+		x_move_str = convert_move_to_PGN(s, move, true);
+		s = make_move(s, move, true);
+		if (VERBOSE_RESULTS) {
+			cout << "\nPlayer X: " << x_move_str << endl;
+			print_board(s);
+		}
 
-//TODO...
+		move = moveY(s);
+		if (move == 255) {
+			cout << "Mate.\n";
+			break;
+		}
 
-	return 0;	
+		y_move_str = convert_move_to_PGN(s, move, false);
+		ss << right << setw(2) << num_turns + 1;
+		ss << ". " << x_move_str << " " << y_move_str;
+		summary.push_back(ss.str());
+		ss.str(string());
+
+		s = make_move(s, move, false);
+		if (VERBOSE_RESULTS) {
+			cout << "\nPlayer Y: " << y_move_str << endl;
+			print_board(s);
+		}
+
+		if (s.R == 255) {
+			cout << "Player Y got the Rook!.\n";
+			break;
+		}
+		num_turns++;
+	}
+
+	cout << "Game ended after " << num_turns+1 << " turns.\n";
+
+	if (VERBOSE_RESULTS) {
+		cout << "Game summary:\n";
+		for (int i=0; i < (int)summary.size(); i++) {
+			cout << summary[i] << endl;
+		}
+	}
+
+	return num_turns;	
 }
 
 
@@ -566,16 +661,21 @@ bool get_is_test() {
 
 */
 unsigned int get_max_turns() {
-	unsigned int response;
-	cout << "Enter the maximum # moves (default = 35): ";
+	unsigned int num_turns;
+	string response;
+	cout << "Enter the maximum # moves (default: 35): ";
+	getline(cin, response);
 	try {
-		cin >> response;
-		cin.ignore();
+		if (response == "") {
+			num_turns = 35;
+		} else {
+			stringstream(response) >> num_turns;
+		}
 	} catch (exception& e) {
 		cout << "Invalid input. exiting...\n";
 		exit(EXIT_FAILURE);
 	}
-	return response;
+	return num_turns;
 }
 
 
@@ -705,7 +805,7 @@ Additional note: only R..+ check and kxR capture are considered.
 */
 string convert_move_to_PGN(state s, unsigned char move, bool player_x) {
 	string move_str;
-	char piece, rank, file;
+	char rank, file;
 	file = (char)(move / 8) + 'a';
 	rank = (char)(move % 8) + '1';
 	if (player_x) {
@@ -770,27 +870,26 @@ void verify_lam(state s) {
 /* Main function
 
 */
-int main(int argc, char** argv) {
+int main() {
 	
 	// command line args?
 
-	//bool is_test = get_is_test();
-	//unsigned int max_turns = get_max_turns();
+	bool is_test = get_is_test();
+	unsigned int max_turns = get_max_turns();
 	state s = get_initial_state();
 	if (kings_too_close(s)) {
 		cout << "Invalid initial board...\n";
 	}
 
-	// int outcome;
-	// if (is_test) {
-	// 	int outcome = test_play(s, max_turns);
-	// } else { //competition play
-	// 	int outcome = play(s, max_turns);
-	// }
-	// cout << "Number of moves made: " << outcome << endl;
-
-	//print_board(s);
-	verify_lam(s);
+	int outcome;
+	if (is_test) {
+		int outcome = test_play(s, max_turns);
+	} else { //competition play
+		verify_lam(s);
+		//int outcome = play(s, max_turns);
+	}
+	//cout << "Number of moves made: " << outcome << endl;
+	
 
 	return 0;
 }

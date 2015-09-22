@@ -1,2 +1,2 @@
 all:
-	g++ KRk.cpp -o KRk
+	g++ -W -Wall -O3 KRk.cpp -o KRk
