@@ -59,11 +59,65 @@ The game summary is saved to file in Portable Game Notation.
 #include <cstdio>
 #include <cctype>
 #include <exception>
-#include "KRk.h"
 using namespace std;
 
 #define VERBOSE_RESULTS true
 #define INPUT_FILE "testCase.txt"
+#define TRY_ADD_MOVE_Y s2=make_move(s,move,false);if(!y_in_check(s2)&&!kings_too_close(s2)){moves.push_back(move);}
+#define TRY_ADD_KING if(K_can_move(s,move)){moves.push_back(move);}
+
+
+bool MATE = false;
+
+
+/* State class
+Defines variables to represent the state of the board.
+Also includes a validation function.
+*/
+class state {
+public:
+	unsigned char K;
+	unsigned char R;
+	unsigned char k;
+	state(unsigned char a, unsigned char b, unsigned char c) {
+		K = a;
+		R = b;
+		k = c;
+	}
+	bool is_valid() {
+		if (K == R || R == k || K == k ||
+			K > 63 || R > 63 || k > 63) {
+			return false;
+		} else {
+			return true;
+		}
+	}
+};
+
+
+unsigned char moveX(state s);
+unsigned char moveY(state s);
+int heuristicX(state s);
+int heuristicY(state s);
+bool is_valid_move(state s, unsigned char move, bool player_x);
+state make_move(state s, unsigned char move, bool player_x);
+std::vector<unsigned char> list_all_moves_x(state s);
+std::vector<unsigned char> list_all_moves_y(state s);
+bool K_can_move(state s, unsigned char move);
+bool kings_too_close(state s);
+bool y_in_check(state s);
+bool in_checkmate(state s);
+int play(state s, int max_turns, bool x_ai);
+int test_play(state s, int max_turns);
+void print_board(state s);
+bool get_is_test();
+unsigned int get_max_turns();
+state get_initial_state();
+state get_state_from_file();
+state get_state_from_stdin();
+unsigned char convert_PGN_to_char(std::string square);
+void verify_lam(state s);
+
 
 
 /* Move function for player X (KR)
@@ -135,53 +189,8 @@ int heuristicY(state s) {
 }
 
 
-/* Checks that the suggested move is valid
-Input:	state s - current state of the board
-		char move - the move to make:
-			if player_x
-				if char < 64, move K. else move R.
-				char /8 = col, (a-h zero-based)
-				char %8 = row, (1-8 zero-based)
-			if player_y:
-				char /8 = col, (a-h zero-based)
-				char %8 = row, (1-8 zero-based)
-		bool player_x - is it Xs move?
-Output:	state - The updated state of the board.
-*/
-bool is_valid_move(state s, unsigned char move, bool player_x) {
-	if (move >= 128) {
-		return false;
-	} else if (!player_x && move >= 64) {
-		return false;
-	} else if (player_x) {
-		if (move < 64) { // move K
-			// see if move is adjecent to s.K
-			// and not wrapped around board edge
-
-			//TODO
-			s.K = move;
-		} else { // move R
-			// see if move row or col == s.R
-			move -= 64;
-
-			//TODO
-			s.R = move;
-		}
-	} else { // player y, move k
-		// see if move is adjecent to s.K
-		// and not wrapped around board edge
-
-		//TODO
-		s.k = move;
-	}
-
-	//See if pieces are overlapping or off the board:
-	return s.is_valid();
-}
-
-
 /* Move's the piece and returns the new state.
-Caution: Only call this function after calling is_valid_move()
+Note: this is used to test moves, and as such should have no side-effects.
 Input:	state s - current state of the board
 		char move - the move to make:
 			if player_x
@@ -203,32 +212,253 @@ state make_move(state s, unsigned char move, bool player_x) {
 		}
 	} else { // player y, move k
 		s.k = move;
+		//TODO: check outside if s.k == s.R (capture)
 	}
 	return s;
 }
 
 
-/* Lists all valid moves for player
-
+/* Lists all valid moves for player X
+I used macros for these as there is a lot of repetition...
 */
-vector<unsigned char> list_all_moves(state s, bool player_x) {
+vector<unsigned char> list_all_moves_x(state s) {
 	vector<unsigned char> moves;
-	if (player_x) {
-		//TODO
-	} else { // player y
-		//TODO
+	unsigned char move;
+	int rank, file;
+	//King
+	rank = s.K % 8;
+	file = s.K / 8;
+	if (rank > 0) {
+		//add below
+		move = s.K - 1;
+		TRY_ADD_KING
+		if (file > 0) {
+			//add down-left
+			move = s.K - 9;
+			TRY_ADD_KING
+		}
+		if (file < 7) {
+			//add down-right
+			move = s.K + 7;
+			TRY_ADD_KING
+		}
+	}
+	if (rank < 7) {
+		//add above
+		move = s.K + 1;
+		TRY_ADD_KING
+		if (file > 0) {
+			//add up-left
+			move = s.K - 7;
+			TRY_ADD_KING
+		}
+		if (file < 7) {
+			//add up-right
+			move = s.K + 9;
+			TRY_ADD_KING
+		}
+	}
+	if (file > 0) {
+		//add left
+		move = s.K - 8;
+		TRY_ADD_KING
+	}
+	if (file < 7) {
+		//add right
+		move = s.K + 8;
+		TRY_ADD_KING
+	} 
+	//Rook
+	rank = s.R % 8;
+	file = s.R / 8;
+
+//TODO: get this right...
+//We can just assume for now, R will not move to k...
+	// move should never == s.k (unless game over.)
+	// if (...) {
+	// 	cout << "X-Rook in Y-king's row... game over??\n";
+	// 	exit(EXIT_FAILURE);
+	// }
+
+	//if rank clear:
+	if (rank != s.K%8) {
+		for (move=rank; move<64; move+=8) {
+			if (move != s.R) {
+				moves.push_back((unsigned char)(move + 64));
+			}
+		}
+	} else { //K in rank...
+		if (file > 0) {
+			move = s.R - 8;
+			while (move >= 0 && move != s.K) {
+				moves.push_back((unsigned char)(move + 64));
+				move -= 8;
+			}
+		}
+		if (file < 8) {
+			move = s.R + 8;
+			while (move < 64 && move != s.K) {
+				moves.push_back((unsigned char)(move + 64));
+				move += 8;
+			}
+		}
+	}
+	//if file is clear
+	if (file != s.k/8 && file != s.K/8) {
+		for (move=file*8; move<(file+1)*8; move++) {
+			if (move != s.R) {
+				moves.push_back((unsigned char)(move + 64));
+			}
+		}
+	} else {//K in file...
+		if (rank > 0) {
+			move = s.R - 1;
+			while (move%8 != 7 && move != s.K) {
+				moves.push_back((unsigned char)(move + 64));
+				move -= 1;
+			}
+		}
+		if (rank < 8) {
+			move = s.R + 1;
+			while (move%8 != 0 && move != s.K) {
+				moves.push_back((unsigned char)(move + 64));
+				move += 1;
+			}
+		}
 	}
 	return moves;
 }
 
 
+/* Lists all valid moves for player Y
+
+*/
+vector<unsigned char> list_all_moves_y(state s) {
+	vector<unsigned char> moves;
+	unsigned char move;
+	int rank, file;
+	state s2(0,0,0);
+	rank = s.k % 8;
+	file = s.k / 8;
+	if (rank > 0) {
+		//add below
+		move = s.k - 1;
+		TRY_ADD_MOVE_Y
+		if (file > 0) {
+			//add down-left
+			move = s.k - 9;
+			TRY_ADD_MOVE_Y
+		}
+		if (file < 7) {
+			//add down-right
+			move = s.k + 7;
+			TRY_ADD_MOVE_Y
+		}
+	}
+	if (rank < 7) {
+		//add above
+		move = s.k + 1;
+		TRY_ADD_MOVE_Y
+		if (file > 0) {
+			//add up-left
+			move = s.k - 7;
+			TRY_ADD_MOVE_Y
+		}
+		if (file < 7) {
+			//add up-right
+			move = s.k + 9;
+			TRY_ADD_MOVE_Y
+		}
+	}
+	if (file > 0) {
+		//add left
+		move = s.k - 8;
+		TRY_ADD_MOVE_Y
+	}
+	if (file < 7) {
+		//add right
+		move = s.k + 8;
+		TRY_ADD_MOVE_Y
+	} 
+	return moves;
+}
+
+
+bool K_can_move(state s, unsigned char move) {
+	state s2 = make_move(s, move, true);
+	if (kings_too_close(s2) || s2.K == s.R) {
+		return false;
+	} else {
+		return true;
+	}
+}
+
+
+/* Determine's if the Kings are within one move of eachother.
+
+*/
+bool kings_too_close(state s) { //TODO: verify this function...
+	//check for wraparound first...
+	if (((s.k%8 == 0) && (s.K%8 == 7)) ||
+		((s.k%8 == 7) && (s.K%8 == 0)) ||
+		((s.k/8 == 0) && (s.K/8 == 7)) ||
+		((s.k/8 == 7) && (s.K/8 == 0))) {
+		return false;
+	} else if (s.k - 9 == s.K ||
+		s.k - 8 == s.K ||
+		s.k - 7 == s.K ||
+		s.k - 1 == s.K ||
+		s.k + 1 == s.K ||
+		s.k + 7 == s.K ||
+		s.k + 8 == s.K ||
+		s.k + 9 == s.K) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+
 /* Determine's if player Ys king is in check
 Note: player x cannot be in check.
+	and y only chechable by rook.
 */
-bool in_check(state s) {
-	//TODO
-
-	return false;
+bool y_in_check(state s) {
+	unsigned char Krank = s.K % 8;
+	unsigned char Rrank = s.R % 8;
+	unsigned char krank = s.k % 8;
+	unsigned char Kfile = s.K / 8;
+	unsigned char Rfile = s.R / 8;
+	unsigned char kfile = s.k / 8;
+	if (krank == Rrank) {
+		//if blocked by K
+		if (krank == Krank) {
+			if (kfile < Kfile && Kfile < Rfile) {
+				return false;
+			} else if (Rfile < Kfile && Kfile < kfile) {
+				return false;
+			} else {
+				return true;
+			}
+		} else {
+			return true;
+		}
+	} else if (kfile == Rfile) {
+		//if blocked by K
+		if (kfile == Kfile) {
+			if (krank < Krank && Krank < Rrank) {
+				return false;
+			} else if (Rrank < Krank && Krank < krank) {
+				return false;
+			} else {
+				return true;
+			}
+		} else {
+			return true;
+		}
+	} else {
+		return false;
+	}
 }
 
 
@@ -236,9 +466,13 @@ bool in_check(state s) {
 Note: player x cannot be in check or mate...
 */
 bool in_checkmate(state s) {
-	//TODO
-
-	return false;
+	//TODO: smaller footprint than list_all_moves??
+	if (list_all_moves_y(s).size() == 0) {
+		cout << "Checkmate found\n"; //TODO: no side-effects. (omit this line)
+		return true;
+	} else {
+		return false;
+	}
 }
 
 
@@ -247,9 +481,10 @@ Controls the play of the game for player vs computer
 	-computer vs other program by inputting other program's output...
 Input:	state s - initial state of the board
 		int max_turns - maximum moves per player allowed.
+		bool x_ai - is AI player x?
 Output:	int - outcome of the game
 */
-int play(state s, int max_turns) {
+int play(state s, int max_turns, bool x_ai) {
 
 //TODO...
 
@@ -268,38 +503,6 @@ int test_play(state s, int max_turns) {
 //TODO...
 
 	return 0;	
-}
-
-
-/* String translator for moves
-Converts move chars to a Portable-Game-Notation string
-Input:	char x - player Xs move
-		char y - player Ys move
-Output:	returns a Portable-Game-Notation string for the turn
-*/
-string translate_moves_to_PGN(unsigned char x, unsigned char y) {
-
-//TODO: if check add +, if mate add #
-	// and add endgame stuff?? - 1/2-1/2, ...
-
-	string s;
-	char row, col;
-	if (x < 64) {
-		s += "K";
-	} else {
-		s += "R";
-		x -= 64;
-	}
-	col = 'a' + (char)(x/8);
-	row = '1' + (char)(x%8);
-	s += col;
-	s += row;
-	s += " k";
-	col = 'a' + (char)(y/8);
-	row = '1' + (char)(y%8);
-	s += col;
-	s += row;
-	return s;
 }
 
 
@@ -336,7 +539,6 @@ bool get_is_test() {
 	string response;
 	cout << "Is this a test (y/n): ";
 	getline(cin, response);
-	cout << "Length: " << response.length() << endl;
 	if (response.length() == 0 ||
 		response == "\n") {
 		cout << "Invalid input. exiting...\n";
@@ -378,7 +580,6 @@ state get_initial_state() {
 	string response;
 	cout << "Read from file (y/n): ";
 	getline(cin, response);
-	cout << "Length: " << response.length() << endl;
 	if (response.length() == 0 ||
 		response == "\n") {
 		cout << "Invalid input. exiting...\n";
@@ -400,6 +601,7 @@ state get_initial_state() {
 
 */
 state get_state_from_file() {
+	cout << "---------------------------------------\n";
 	cout << "Loading initial game-state from file...\n";
 	ifstream infile;
 	//TODO: allow user defined filename??
@@ -421,6 +623,7 @@ state get_state_from_file() {
 		exit(EXIT_FAILURE);
 	} else {
 		cout << "Loaded game:\n" << line << endl;
+		cout << "---------------------------------------\n";
 		if (VERBOSE_RESULTS) {
 			print_board(s);
 		}
@@ -435,6 +638,7 @@ state get_state_from_file() {
 state get_state_from_stdin() {
 	string response;
 	unsigned char K, R, k;
+	cout << "--------------------------------------\n";
 	cout << "Player X King position (ex: a1 or e5): ";
 	getline(cin, response);
 	K = convert_PGN_to_char(response);
@@ -451,6 +655,8 @@ state get_state_from_stdin() {
 		exit(EXIT_FAILURE);
 	} else {
 		cout << "Loaded game:\n";
+		//TODO: print initial coordinates...
+		cout << "--------------------------------------\n";
 		if (VERBOSE_RESULTS) {
 			print_board(s);
 		}
@@ -460,7 +666,9 @@ state get_state_from_stdin() {
 
 
 /* Converter for reading piece position from stdin
-
+Input:	string square - Two char notation for rank & file
+			ex: "a1", "e2", "h8" ...
+Output:	unsigned char - Index of board square as defined in description.
 */
 unsigned char convert_PGN_to_char(string square) {
 	if (square.length() < 2) {
@@ -476,6 +684,83 @@ unsigned char convert_PGN_to_char(string square) {
 }
 
 
+/* Converter for writing PGN from moves
+Note: this is not a reverse of the previous function, piece is given too.
+Input:	state s - current state of board (before move)
+			Note: state is used to see if check, capture, mate...
+		unsigned char - Index of board square as defined in description.
+			Note: For rook, char value is +64
+		bool player_x - is it player X's move?
+Output:	string - Three or more char notation for rank & file
+			ex: "Ka1", "Re2+", "kxh8" ...
+Additional note: only R..+ check and kxR capture are considered.
+	This function may be given invalid moves such as a king moving into
+	the other king's move space. This will not show as a check.
+*/
+string convert_move_to_PGN(state s, unsigned char move, bool player_x) {
+	string move_str;
+	char piece, rank, file;
+	file = (char)(move / 8) + 'a';
+	rank = (char)(move % 8) + '1';
+	if (player_x) {
+		if (move < 64) { //King
+			move_str += "K";
+			move_str += file;
+			move_str += rank;
+			if (in_checkmate(make_move(s, move, true))) {
+				move_str += "#";
+			}
+		} else { //Rook
+			file -= 8;
+			move_str += "R";
+			move_str += file;
+			move_str += rank;
+			if (y_in_check(make_move(s, move, true))) {
+				if (in_checkmate(make_move(s, move, true))) {
+					move_str += "#";
+				} else {
+					move_str += "+";
+				}
+			}
+		}
+	} else { //y king
+		move_str += "k";
+		if (s.R == move) {
+			move_str += "x";
+		}
+		move_str += file;
+		move_str += rank;
+	}
+	return move_str;
+}
+
+
+/* Testing function to verify that list_all_moves() works... */
+void verify_lam(state s) {
+	vector<unsigned char> moves;
+	int l;
+	cout << "\nPlayer X's moves:\n";
+	moves = list_all_moves_x(s);
+	l = moves.size();
+	if (l == 0) {
+		cout << "No moves found...\n";
+	} else {
+		for (int i=0; i<l; i++) {
+			cout << convert_move_to_PGN(s, moves[i], true) << endl;
+		}
+	}
+	cout << "\nPlayer Y's moves:\n";
+	moves = list_all_moves_y(s);
+	l = moves.size();
+	if (l == 0) {
+		cout << "No moves found...\n";
+	} else {
+		for (int i=0; i<l; i++) {
+			cout << convert_move_to_PGN(s, moves[i], false) << endl;
+		}
+	}
+}
+
 /* Main function
 
 */
@@ -483,26 +768,20 @@ int main(int argc, char** argv) {
 	
 	// command line args?
 
-	bool is_test = get_is_test();
-	unsigned int max_turns = get_max_turns();
+	//bool is_test = get_is_test();
+	//unsigned int max_turns = get_max_turns();
 	state s = get_initial_state();
 
-	int outcome;
-	if (is_test) {
-		int outcome = test_play(s, max_turns);
-	} else { //competition play
-		int outcome = play(s, max_turns);
-	}
+	// int outcome;
+	// if (is_test) {
+	// 	int outcome = test_play(s, max_turns);
+	// } else { //competition play
+	// 	int outcome = play(s, max_turns);
+	// }
+	// cout << "Number of moves made: " << outcome << endl;
 
-	cout << "Number of moves made: " << outcome << endl;
-
-
-	/*
-//Test to see if printing and state work as expected...
-	state s(7, 63, 56);
-//	cout << "Valid? " << s.is_valid() << endl;
-	print_board(s);
-	*/
+	//print_board(s);
+	verify_lam(s);
 
 	return 0;
 }
