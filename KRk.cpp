@@ -212,7 +212,10 @@ state make_move(state s, unsigned char move, bool player_x) {
 		}
 	} else { // player y, move k
 		s.k = move;
-		//TODO: check outside if s.k == s.R (capture)
+		//TODO: check here?? if s.k == s.R (capture)
+		if (s.k == s.R) {
+			s.R = 255;
+		}
 	}
 	return s;
 }
@@ -424,6 +427,9 @@ Note: player x cannot be in check.
 	and y only chechable by rook.
 */
 bool y_in_check(state s) {
+	if (s.R == 255) {
+		return false;
+	}
 	unsigned char Krank = s.K % 8;
 	unsigned char Rrank = s.R % 8;
 	unsigned char krank = s.k % 8;
@@ -771,6 +777,9 @@ int main(int argc, char** argv) {
 	//bool is_test = get_is_test();
 	//unsigned int max_turns = get_max_turns();
 	state s = get_initial_state();
+	if (kings_too_close(s)) {
+		cout << "Invalid initial board...\n";
+	}
 
 	// int outcome;
 	// if (is_test) {
