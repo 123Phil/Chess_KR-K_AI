@@ -110,6 +110,7 @@ unsigned char moveX(state s);
 unsigned char moveY(state s);
 int heuristicX(state s);
 int heuristicY(state s);
+int heuristicY2(state s);
 bool is_valid_move(state s, unsigned char move, bool player_x);
 state make_move(state s, unsigned char move, bool player_x);
 vector<unsigned char> list_all_moves_x(state s);
@@ -200,7 +201,7 @@ unsigned char moveY(state s) {
 	vector< pair<int, unsigned char> > ranked_moves;
 	int rank;
 	for (int i=0; i < (int)moves.size(); i++) {
-		rank = heuristicY(make_move(s, moves[i], false));
+		rank = heuristicY2(make_move(s, moves[i], false));
 		ranked_moves.push_back(make_pair(rank, moves[i]));
 	}
 	
@@ -441,13 +442,13 @@ int heuristicY(state s) {
 	if (rank2 > 7) {
 		t_dist = rank2 - 5;
 	} else {
-		t_dist = 5 - rank2;
+		t_dist = 9 - rank2;
 	}
 	dist_from_center += t_dist * t_dist;
 	if (file2 > 7) {
 		t_dist = file2 - 5;
 	} else {
-		t_dist = 5 - file2;
+		t_dist = 9 - file2;
 	}
 	dist_from_center += t_dist * t_dist;
 	
@@ -512,9 +513,8 @@ int heuristicY(state s) {
 	}
 
 	//K factor...
-// Add more if K on same side as k
-// Add a lot if K blocks and allows escape - but more if escaped...
-
+	// Add more if K on same side as k
+	// Add a lot if K blocks and allows escape - but more if escaped...
 	//If the king is blocking you from center, lower the K_factor...
 	//Direct blocks (k-space-K) are bad...
 	int K_factor = 30;
@@ -549,6 +549,162 @@ int heuristicY(state s) {
 	return h;
 }
 
+
+/* Another attempt at Heuristic for player Y
+Input:	state s - current state of the board
+Output:	int - the value of the board for player Y
+			A higher value means the board state is more desireable.
+			Bad positions should return a relatively low number
+			and good positions should return a high number.
+Capture Rook: 65536
+Rook block: 1000 + (30 to 200, more when closer to rook)
+King block && one away from rook: 1200
+King block && safe rook: 10
+Rook block and king close to edge: 50 to 250, more close to center
+No rook block: 3000 + (50 to 250, more close to center)
+In rook row && check??: 50
+In rook row && check && pin: 0 //Push & mate
+In rook row, no check: 1500
+*/
+int heuristicY2(state s) {
+	//Always capture rook if possible:
+	if (s.R == 255) {
+		return 65536;
+	}
+	unsigned char Krank = s.K % 8;
+	unsigned char Rrank = s.R % 8;
+	unsigned char krank = s.k % 8;
+	unsigned char Kfile = s.K / 8;
+	unsigned char Rfile = s.R / 8;
+	unsigned char kfile = s.k / 8;
+	unsigned char rank2 = krank * 2;
+	unsigned char file2 = kfile * 2;
+
+	// If blocked by rook move toward rook (unless king trap)
+	if (krank < 3 && Rrank == krank + 1) {//Rook above
+		if (Krank == krank + 2 && kfile == Kfile) {//trap
+			if (Rfile == kfile + 1 || Rfile == kfile - 1) {
+				return 1200;
+			} else {
+				return 10;
+			}
+		} else {//Move toward rook
+			if (Rfile < kfile) {
+				return 1000 + (10 - (kfile - Rfile)) * 20;
+			} else {
+				return 1000 + (10 - (Rfile - kfile)) * 20;
+			}
+		}
+	} else if (krank > 4 && Rrank == krank - 1) {//Rook below
+		if (Krank == krank - 2 && kfile == Kfile) {//trap
+			if (Rfile == kfile + 1 || Rfile == kfile - 1) {
+				return 1200;
+			} else {
+				return 10;
+			}
+		} else {//Move toward rook
+			if (Rfile < kfile) {
+				return 1000 + (10 - (kfile - Rfile)) * 20;
+			} else {
+				return 1000 + (10 - (Rfile - kfile)) * 20;
+			}
+		}
+	} else if (kfile < 3 && Rfile == kfile + 1) {//Rook on right
+		if (Kfile == kfile + 2 && krank == Krank) {//trap
+			if (Rrank == krank + 1 || Rrank == krank - 1) {
+				return 1200;
+			} else {
+				return 10;
+			}
+		} else {//Move toward rook
+			if (Rrank < krank) {
+				return 1000 + (10 - (krank - Rrank)) * 20;
+			} else {
+				return 1000 + (10 - (Rrank - krank)) * 20;
+			}
+		}
+	} else if (kfile > 4 && Rfile == kfile - 1) {//Rook on left
+		if (Kfile == kfile - 2 && krank == Krank) {//trap
+			if (Rrank == krank + 1 || Rrank == krank - 1) {
+				return 1200;
+			} else {
+				return 10;
+			}
+		} else {//Move toward rook
+			if (Rrank < krank) {
+				return 1000 + (10 - (krank - Rrank)) * 20;
+			} else {
+				return 1000 + (10 - (Rrank - krank)) * 20;
+			}
+		}
+	} else if (Rrank == krank) {//same rank as rook:
+		if (y_in_check(s)) {
+			//essentially dead code?
+			// if trap:
+			if (krank > 3) {
+				if (kfile == Kfile && Krank == krank-2) {
+					return 0;
+				} else {
+					return 50;
+				}
+			} else {
+				if (kfile == Kfile && Krank == krank+2) {
+					return 0;
+				} else {
+					return 50;
+				}
+			}
+		} else {
+			return 1500;
+		}
+	} else if (Rfile == kfile) {//same file as rook:
+		if (y_in_check(s)) {
+			//essentially dead code?
+			// if trap:
+			if (kfile > 3) {
+				if (krank == Krank && Kfile == kfile-2) {
+					return 0;
+				} else {
+					return 50;
+				}
+			} else {
+				if (krank == Krank && Kfile == kfile+2) {
+					return 0;
+				} else {
+					return 50;
+				}
+			}
+		} else {
+			return 1500;
+		}
+	}
+
+	//move toward center.
+	int t_dist = 0;
+	int dist_from_center = 0;
+	if (rank2 > 7) {
+		t_dist = rank2 - 7;
+	} else {
+		t_dist = 7 - rank2;
+	}
+	dist_from_center += t_dist * t_dist;
+	if (file2 > 7) {
+		t_dist = file2 - 7;
+	} else {
+		t_dist = 7 - file2;
+	}
+	dist_from_center += t_dist * t_dist;
+
+	//backzone gets no bonus.
+	if ((krank > 4 && Rrank > 3 && Rrank < krank) ||
+		(krank < 3 && Rrank < 4 && Rrank > krank) ||
+		(kfile > 4 && Rfile > 3 && Rfile < kfile) ||
+		(kfile < 3 && Rfile < 4 && Rfile > kfile)) {
+		return 250 - dist_from_center;
+	} else {
+		return 3000 + (250-dist_from_center);		
+	}
+}
 
 /* Called to validate player input.
 
@@ -635,6 +791,15 @@ I used macros for these as there is a lot of repetition...
 vector<unsigned char> list_all_moves_x(state s) {
 	vector<unsigned char> moves;
 	unsigned char move;
+
+	//TODO: get this right...
+	//We can just assume for now, R will not move to k...
+	
+	// move should never == s.k (unless game over.)
+	// if (...) {
+	// 	err("X-Rook in Y-king's row... game over??");
+	// }
+
 	int rank, file;
 	//King
 	rank = s.K % 8;
@@ -682,14 +847,6 @@ vector<unsigned char> list_all_moves_x(state s) {
 	//Rook
 	rank = s.R % 8;
 	file = s.R / 8;
-
-	//TODO: get this right...
-	//We can just assume for now, R will not move to k...
-	
-	// move should never == s.k (unless game over.)
-	// if (...) {
-	// 	err("X-Rook in Y-king's row... game over??");
-	// }
 
 	//if rank clear:
 	if (rank != s.K%8) {
@@ -918,9 +1075,14 @@ void play(state s, int max_turns, bool x_ai) {
 			while (move == 255) {
 				cout << "Enter a valid move: ";
 				cin >> response;
-				move = convert_PGN_to_move(response, false);
+				move = convert_PGN_to_move(response, true);
+				if (!is_valid_move(s, move, true)) {
+					cout << "Invalid move, try again.\n";
+					move = 255;
+				}
 			}
 		}
+
 		x_move_str = convert_move_to_PGN(s, move, true);
 		s = make_move(s, move, true);
 		if (VERBOSE_RESULTS) {
@@ -932,11 +1094,22 @@ void play(state s, int max_turns, bool x_ai) {
 		if (!x_ai) {
 			move = moveY(s);
 		} else {
+			if (in_checkmate(s)) {
+				cout << "Checkmate.\n";
+				ss << right << setw(2) << num_turns + 1;
+				ss << ". " << x_move_str << " {Checkmate. Player X wins.}";
+				summary.push_back(ss.str());
+				break;
+			}
 			move = 255;
 			while (move == 255) {
 				cout << "Enter a valid move: ";
 				cin >> response;
-				move = convert_PGN_to_move(response, true);
+				move = convert_PGN_to_move(response, false);
+				if (!is_valid_move(s, move, false)) {
+					cout << "Invalid move, try again.\n";
+					move = 255;
+				}
 			}
 		}
 		if (move == 255) {
@@ -981,7 +1154,6 @@ void play(state s, int max_turns, bool x_ai) {
 			cout << summary[i] << endl;
 		}
 	}
-
 }
 
 
@@ -1284,8 +1456,8 @@ unsigned char convert_PGN_to_move(string move_str, bool player_x) {
 		cout << "Cannot move opposing player's piece.\n";
 		return 255;
 	}
-	if (file < 'a' || file > 'h' ||
-		rank < '1' || rank > '8') {
+	if (file < 0 || file > 7 ||
+		rank < 0 || rank > 7) {
 		cout << "Invalid coordinate.\n";
 		return 255;
 	}
@@ -1403,7 +1575,7 @@ void test_heuristics() {
 	ranked_moves.clear();
 	moves = list_all_moves_y(s);
 	for (i=0; i < (int)moves.size(); i++) {
-		rank = heuristicY(make_move(s, moves[i], false));
+		rank = heuristicY2(make_move(s, moves[i], false));
 		ranked_moves.push_back(make_pair(rank, moves[i]));
 	}
 	sort(ranked_moves.begin(), ranked_moves.end());
@@ -1424,7 +1596,7 @@ void test_heuristics() {
 
 */
 int main() {
-	//test_heuristics();
+	test_heuristics();
 
 	bool is_test = get_is_test();
 	bool x;
