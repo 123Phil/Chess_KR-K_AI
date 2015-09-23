@@ -1,6 +1,13 @@
 /* KRk program for chess end-games with king & rook vs king
 Author: Phillip Stewart
 
+TODO:
+test play function
+improve heuristics
+recurse, minimax (using top few and h(n) for probability!)
+const params that shouldn't change?
+
+
 The board state is represented by 3 chars, for K, R, and k
 	the x.K, x.R and y.K positions.
 	These chars hold a value from 0-63, pertaining to the square as shown
@@ -65,10 +72,10 @@ The game summary is saved to file in Portable Game Notation.
 using namespace std;
 
 #define VERBOSE_RESULTS true
+#define DEBUG_VERBOSE false
 #define INPUT_FILE "testCase.txt"
 #define TRY_ADD_MOVE_Y s2=make_move(s,move,false);if(!y_in_check(s2)&&!kings_too_close(s2)){moves.push_back(move);}
 #define TRY_ADD_KING if(K_can_move(s,move)){moves.push_back(move);}
-
 
 bool MATE = false;
 
@@ -98,30 +105,39 @@ public:
 };
 
 
+void err(string msg);
 unsigned char moveX(state s);
 unsigned char moveY(state s);
 int heuristicX(state s);
 int heuristicY(state s);
 bool is_valid_move(state s, unsigned char move, bool player_x);
 state make_move(state s, unsigned char move, bool player_x);
-std::vector<unsigned char> list_all_moves_x(state s);
-std::vector<unsigned char> list_all_moves_y(state s);
+vector<unsigned char> list_all_moves_x(state s);
+vector<unsigned char> list_all_moves_y(state s);
 bool K_can_move(state s, unsigned char move);
 bool kings_too_close(state s);
 bool y_in_check(state s);
 bool in_checkmate(state s);
-int play(state s, int max_turns, bool x_ai);
-int test_play(state s, int max_turns);
+void play(state s, int max_turns, bool x_ai);
+void test_play(state s, int max_turns);
 void print_board(state s);
 bool get_is_test();
 unsigned int get_max_turns();
 state get_initial_state();
 state get_state_from_file();
 state get_state_from_stdin();
-unsigned char convert_PGN_to_char(std::string square);
+bool ask_x();
+unsigned char convert_PGN_to_char(string square);
+unsigned char convert_PGN_to_move(string move_str, bool player_x);
 string convert_move_to_PGN(state s, unsigned char move, bool player_x);
 void verify_lam(state s);
 
+
+
+void err(string msg) {
+	cerr << msg << endl << "Exiting...\n";
+	exit(EXIT_FAILURE);
+}
 
 
 /* Move function for player X (KR)
@@ -135,8 +151,7 @@ unsigned char moveX(state s) {
 	unsigned char move = 0;
 	vector<unsigned char> moves = list_all_moves_x(s);
 	if (moves.size() == 0) {
-		cout << "No moves found for X...\n";
-		exit(EXIT_FAILURE);
+		err("No moves found for X?!?!");
 	}
 	vector< pair<int, unsigned char> > ranked_moves;
 	int rank;
@@ -148,14 +163,14 @@ unsigned char moveX(state s) {
 	sort(ranked_moves.begin(), ranked_moves.end());
 	reverse(ranked_moves.begin(), ranked_moves.end());
 
-	if (VERBOSE_RESULTS) {
+	if (DEBUG_VERBOSE) {
 		string move_str;
 		unsigned char move;
 		for (int i=0; i < (int)ranked_moves.size(); i++) {
 			rank = ranked_moves[i].first;
 			move = ranked_moves[i].second;
 			move_str = convert_move_to_PGN(s, move, true);
-			//cout << "Move: " << move_str << "  h(n): " << rank << endl;
+			cout << "Move: " << move_str << "  h(n): " << rank << endl;
 		}
 	}
 
@@ -176,9 +191,11 @@ unsigned char moveY(state s) {
 	unsigned char move = 0;
 	vector<unsigned char> moves = list_all_moves_y(s);
 	if (moves.size() == 0) {
-		cout << "No moves found for Y...\n";
+		if (VERBOSE_RESULTS) {
+			cout << "No moves found for Y...\n";
+		}
+		//TODO: where return to - check for ==255 (mate).
 		return 255;
-		// exit(EXIT_FAILURE);
 	}
 	vector< pair<int, unsigned char> > ranked_moves;
 	int rank;
@@ -190,18 +207,19 @@ unsigned char moveY(state s) {
 	sort(ranked_moves.begin(), ranked_moves.end());
 	reverse(ranked_moves.begin(), ranked_moves.end());
 
-	if (VERBOSE_RESULTS) {
+	if (DEBUG_VERBOSE) {
 		string move_str;
 		unsigned char move;
 		for (int i=0; i < (int)ranked_moves.size(); i++) {
 			rank = ranked_moves[i].first;
 			move = ranked_moves[i].second;
 			move_str = convert_move_to_PGN(s, move, false);
-			//cout << "Move: " << move_str << "  h(n): " << rank << endl;
+			cout << "Move: " << move_str << "  h(n): " << rank << endl;
 		}
 	}
 
 	// recurse??
+
 	move = ranked_moves[0].second;
 	return move;
 }
@@ -216,8 +234,182 @@ Output:	int - the value of the board for player Y
 */
 int heuristicX(state s) {
 	int h = 0;
+	unsigned char Krank = s.K % 8;
+	unsigned char Rrank = s.R % 8;
+	unsigned char krank = s.k % 8;
+	unsigned char Kfile = s.K / 8;
+	unsigned char Rfile = s.R / 8;
+	unsigned char kfile = s.k / 8;
 
-	h = s.K + s.R;
+	//R should be 1 rank or file from k, and far from k on that row
+	//and the optimal row forces k outside most...
+	int R_factor = 0;
+	//K should be close to k, (K-space-k over rook line is best)
+	int K_factor = 0;
+	int rd = krank - Rrank;
+	int fd = kfile - Rfile;
+	int rdk = krank - Krank;
+	int fdk = kfile - Kfile;
+
+	//If k can capture R, return 0. If checkmate, return 2^16
+	if ((rd == -1 || rd == 0 || rd == 1) &&
+		(fd == -1 || fd == 0 || fd == 1)) {
+		//TODO: unless K adj to R... (protected check)
+		return 0;
+	} else if ((Rrank == krank && Rrank == 0 && Krank == 2 && Kfile == kfile) ||
+		(Rrank == krank && Rrank == 7 && Krank == 5 && Kfile == kfile) ||
+		(Rfile == kfile && Rfile == 0 && Kfile == 2 && Krank == krank) ||
+		(Rfile == kfile && Rfile == 7 && Kfile == 5 && Krank == krank)) {
+		//Checkmate!
+		return 65536;
+	} else if ((Rrank == krank && Krank == krank - 2 && Kfile == kfile) ||
+		(Rrank == krank && Krank == krank + 2 && Kfile == kfile) ||
+		(Rfile == kfile && Kfile == kfile - 2 && Krank == krank) ||
+		(Rfile == kfile && Kfile == kfile + 2 && Krank == krank)) {
+		//Force k to edge.
+		return 32768;
+	}
+
+	//All this below assumes R is one row from k.
+	//if K on wrong side, add 0
+	//if K on line - add 100 if between R&k, else add 500
+	//if K on correct side - 3k + rdk stuff
+	int R_on_edge_factor = 0;
+	if (krank >= 4) {//Push to top...
+		if (Rrank == krank-1) {
+			if (Rfile == 0) {
+				R_on_edge_factor = 50;
+				fdk--;
+			} else if (Rfile == 7) {
+				R_on_edge_factor = 50;
+				fdk++;
+			}
+			rdk = (krank-2) - Krank;
+			if (Rrank == Krank) {
+				//If the king is in the way...
+				if ((kfile < Kfile && Kfile < Rfile) ||
+					(kfile > Kfile && Kfile > Rfile)) {
+					K_factor = 100;
+				} else {
+					R_factor = 1000 * Rrank;//1k more for each row up.
+					R_factor += fd*fd;
+					K_factor = 500;
+				}
+			} else {
+				R_factor = 1000 * Rrank;//1k more for each row up.
+				R_factor += fd*fd;
+				// K on the right side?
+				if (Krank > Rrank) {
+					K_factor = 0;
+				} else {
+					K_factor = 1000;
+				}
+			}
+		}
+	} else {//Push to bottom...
+		if (Rrank == krank+1) {
+			if (Rfile == 0) {
+				R_on_edge_factor = 50;
+				fdk--;
+			} else if (Rfile == 7) {
+				R_on_edge_factor = 50;
+				fdk++;
+			}
+			rdk = (krank+2) - Krank;
+			if (Rrank == Krank) {
+				if ((kfile < Kfile && Kfile < Rfile) ||
+					(kfile > Kfile && Kfile > Rfile)) {
+					K_factor = 100;
+				} else {
+					R_factor = 1000 * (7-Rrank);//1k more for each row down.
+					R_factor += fd*fd;
+					K_factor = 500;
+				}
+			} else {
+				R_factor = 1000 * (7-Rrank);//1k more for each row down.
+				R_factor += fd*fd;
+				// K on the right side?
+				if (Krank < Rrank) {
+					K_factor = 0;
+				} else {
+					K_factor = 1000;
+				}
+			}
+		}
+	}
+	if (kfile < 4) {//Push to left...
+		if (Rfile == kfile+1) {
+			if (Rrank == 0) {
+				R_on_edge_factor = 50;
+				rdk--;
+			} else if (Rrank == 7) {
+				R_on_edge_factor = 50;
+				rdk++;
+			}
+			fdk = (kfile+2) - Kfile;
+			if (Rfile == Kfile) {
+				if ((krank < Krank && Krank < Rrank) ||
+					(krank > Krank && Krank > Rrank)) {
+					K_factor = 100;
+				} else {
+					R_factor = 1000 * (7-Rfile);//1k more for each row left.
+					R_factor += rd*rd;
+					K_factor = 500;
+				}
+			} else {
+				R_factor = 1000 * (7-Rfile);//1k more for each row left.
+				R_factor += rd*rd;
+				// K on the right side?
+				if (Kfile < Rfile) {
+					K_factor = 0;
+				} else {
+					K_factor = 1000;
+				}
+			}
+		}
+	} else {//Push to right...
+		if (Rfile == kfile-1) {
+			if (Rrank == 0) {
+				R_on_edge_factor = 50;
+				rdk--;
+			} else if (Rrank == 7) {
+				R_on_edge_factor = 50;
+				rdk++;
+			}
+			fdk = (kfile-2) - Kfile;
+			if (Rfile == Kfile) {
+				if ((krank < Krank && Krank < Rrank) ||
+					(krank > Krank && Krank > Rrank)) {
+					K_factor = 100;
+				} else {
+					R_factor = 1000 * Rfile;//1k more for each row right.
+					R_factor += rd*rd;
+					K_factor = 500;
+				}
+			} else {
+				R_factor = 1000 * Rfile;//1k more for each row right.
+				R_factor += rd*rd;
+				// K on the right side?
+				if (Kfile > Rfile) {
+					K_factor = 0;
+				} else {
+					K_factor = 1000;
+				}
+			}
+		}
+	}
+
+	if (rdk > 0) {
+		K_factor += (10-rdk)*(10-rdk);
+	} else {
+		K_factor += (10+rdk)*(10+rdk);
+	} if (fdk > 0) {
+		K_factor += (10-fdk)*(10-fdk);
+	} else {
+		K_factor += (10+fdk)*(10+fdk);
+	}
+	
+	h = R_factor + K_factor + R_on_edge_factor;
 	return h;
 }
 
@@ -230,11 +422,178 @@ Output:	int - the value of the board for player Y
 			and good positions should return a high number.
 */
 int heuristicY(state s) {
+	//Always capture rook if possible:
+	if (s.R == 255) {
+		return 65536;
+	}
 	int h = 0;
-
+	unsigned char Krank = s.K % 8;
+	unsigned char Rrank = s.R % 8;
+	unsigned char krank = s.k % 8;
+	unsigned char Kfile = s.K / 8;
+	unsigned char Rfile = s.R / 8;
+	unsigned char kfile = s.k / 8;
+	unsigned char rank2 = krank * 2;
+	unsigned char file2 = kfile * 2;
+	int t_dist = 0;
+	int dist_from_center = 0;
+	//Try to move toward the center.
+	if (rank2 > 7) {
+		t_dist = rank2 - 5;
+	} else {
+		t_dist = 5 - rank2;
+	}
+	dist_from_center += t_dist * t_dist;
+	if (file2 > 7) {
+		t_dist = file2 - 5;
+	} else {
+		t_dist = 5 - file2;
+	}
+	dist_from_center += t_dist * t_dist;
 	
-	h = s.k;
+	//Try to annoy the Rook. -but don't walk into trap.
+	//TODO: initially high if on center side of rook, low if trapped
+	int rook_factor = 2;
+
+	if (Rrank == krank + 1) {//Rook above
+		if (krank > 4) {
+			rook_factor = 0;
+		} else if (Krank == krank + 2 && kfile == Kfile) {//trap
+			rook_factor = 0;
+		} else {//Move toward rook
+			if (Rfile < kfile) {
+				rook_factor = (8 - (kfile - Rfile)) * 2;
+			} else {
+				rook_factor = (8 - (Rfile - kfile)) * 2;
+			}
+		}
+	} else if (Rrank == krank - 1) {//Rook below
+		if (krank < 3) {
+			rook_factor = 0;
+		} else if (Krank == krank - 2 && kfile == Kfile) {//trap
+			rook_factor = 0;
+		} else {//Move toward rook
+			if (Rfile < kfile) {
+				rook_factor = (8 - (kfile - Rfile)) * 2;
+			} else {
+				rook_factor = (8 - (Rfile - kfile)) * 2;
+			}
+		}
+	} else if (Rfile == kfile - 1) {//Rook on left
+		if (kfile < 3) {
+			rook_factor = 0;
+		} else if (Kfile == kfile - 2 && krank == Krank) {//trap
+			rook_factor = 0;
+		} else {//Move toward rook
+			if (Rrank < krank) {
+				rook_factor = (8 - (krank - Rrank)) * 2;
+			} else {
+				rook_factor = (8 - (Rrank - krank)) * 2;
+			}
+		}
+	} else if (Rfile == kfile + 1) {//Rook on right
+		if (kfile > 4) {
+			rook_factor = 0;
+		} else if (Kfile == kfile + 2 && krank == Krank) {//trap
+			rook_factor = 0;
+		} else {//Move toward rook
+			if (Rrank < krank) {
+				rook_factor = (8 - (krank - Rrank)) * 2;
+			} else {
+				rook_factor = (8 - (Rrank - krank)) * 2;
+			}
+		}
+	} else { //same row as rook...
+		if (y_in_check(s)) {
+			rook_factor = 0;
+		} else {
+			rook_factor = 10;
+		}
+	}
+
+	//K factor...
+// Add more if K on same side as k
+// Add a lot if K blocks and allows escape - but more if escaped...
+
+	//If the king is blocking you from center, lower the K_factor...
+	//Direct blocks (k-space-K) are bad...
+	int K_factor = 30;
+	if (krank > 4 && Krank > 3 && krank > Krank) {
+		if (Kfile == kfile) {
+			K_factor -= (5 - (krank - Krank)) * 10;
+		} else {
+			//TODO: depends on how close...
+			K_factor = 20;
+		}
+	} else if (krank < 3 && Krank < 4 && krank < Krank) {
+		if (Kfile == kfile) {
+			K_factor -= (5 - (Krank - krank)) * 10;
+		} else {
+			K_factor = 20;
+		}
+	} else if (kfile > 4 && Kfile > 3 && kfile > Kfile) {
+		if (Krank == krank) {
+			K_factor -= (5 - (kfile - Kfile)) * 10;
+		} else {
+			K_factor = 20;
+		}
+	} else if (kfile < 3 && Kfile < 4 && kfile < Kfile) {
+		if (Krank == krank) {
+			K_factor -= (5 - (Kfile - kfile)) * 10;
+		} else {
+			K_factor = 20;
+		}
+	}
+
+	h = (200 - dist_from_center) + rook_factor*rook_factor;// + K_factor;
 	return h;
+}
+
+
+/* Called to validate player input.
+
+*/
+bool is_valid_move(state s, unsigned char move, bool player_x) {
+	vector<unsigned char> moves;
+	if (player_x) {
+		moves = list_all_moves_x(s);
+		for (int i=0; i < (int)moves.size(); i++) {
+			if (move == moves[i]) {
+				return true;
+			}
+		}
+		return false;
+	} else {
+		moves = list_all_moves_y(s);
+		for (int i=0; i < (int)moves.size(); i++) {
+			if (move == moves[i]) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	//This stuff shouldn't be necessary as long as list_all_moves is good.
+	// state s2 = make_move(s);
+	// if (s2.K == s2.k ||
+	// 	s2.K == s2.R ||
+	// 	s2.K > 63 ||
+	// 	s2.R > 63 ||
+	// 	s2.k > 63 ||
+	// 	kings_too_close(s2)) {
+	// 	return false;
+	// }
+
+	// if (!player_x) {
+	// 	//Player X can put Y in check, but Y cannot move into check.
+	// 	if (y_in_check(s2)) {
+	// 		return false;
+	// 	}
+	// }
+
+	// // see if peice can go s->s2 legally.
+
+	// return true;
 }
 
 
@@ -261,7 +620,7 @@ state make_move(state s, unsigned char move, bool player_x) {
 		}
 	} else { // player y, move k
 		s.k = move;
-		//TODO: check here?? if s.k == s.R (capture)
+		//TODO: check where?? if s.k == s.R (capture)
 		if (s.k == s.R) {
 			s.R = 255;
 		}
@@ -324,12 +683,12 @@ vector<unsigned char> list_all_moves_x(state s) {
 	rank = s.R % 8;
 	file = s.R / 8;
 
-//TODO: get this right...
-//We can just assume for now, R will not move to k...
+	//TODO: get this right...
+	//We can just assume for now, R will not move to k...
+	
 	// move should never == s.k (unless game over.)
 	// if (...) {
-	// 	cout << "X-Rook in Y-king's row... game over??\n";
-	// 	exit(EXIT_FAILURE);
+	// 	err("X-Rook in Y-king's row... game over??");
 	// }
 
 	//if rank clear:
@@ -343,11 +702,14 @@ vector<unsigned char> list_all_moves_x(state s) {
 		if (file > 0) {
 			move = s.R - 8;
 			while (move >= 0 && move != s.K) {
+				if (move > 200) {//watch out for unsigned overflow...
+					break;
+				}
 				moves.push_back((unsigned char)(move + 64));
 				move -= 8;
 			}
 		}
-		if (file < 8) {
+		if (file < 7) {
 			move = s.R + 8;
 			while (move < 64 && move != s.K) {
 				moves.push_back((unsigned char)(move + 64));
@@ -356,7 +718,7 @@ vector<unsigned char> list_all_moves_x(state s) {
 		}
 	}
 	//if file is clear
-	if (file != s.k/8 && file != s.K/8) {
+	if (file != s.K/8) {
 		for (move=file*8; move<(file+1)*8; move++) {
 			if (move != s.R) {
 				moves.push_back((unsigned char)(move + 64));
@@ -370,7 +732,7 @@ vector<unsigned char> list_all_moves_x(state s) {
 				move -= 1;
 			}
 		}
-		if (rank < 8) {
+		if (rank < 7) {
 			move = s.R + 1;
 			while (move%8 != 0 && move != s.K) {
 				moves.push_back((unsigned char)(move + 64));
@@ -522,8 +884,10 @@ Note: player x cannot be in check or mate...
 */
 bool in_checkmate(state s) {
 	//TODO: smaller footprint than list_all_moves??
-	if (list_all_moves_y(s).size() == 0) {
-		cout << "Checkmate found\n"; //TODO: no side-effects. (omit this line)
+	if (y_in_check(s) && list_all_moves_y(s).size() == 0) {
+		if (DEBUG_VERBOSE) {
+			cout << "Checkmate found!\n";
+		}
 		return true;
 	} else {
 		return false;
@@ -539,11 +903,85 @@ Input:	state s - initial state of the board
 		bool x_ai - is AI player x?
 Output:	int - outcome of the game
 */
-int play(state s, int max_turns, bool x_ai) {
+void play(state s, int max_turns, bool x_ai) {
+	int num_turns = 0;
+	unsigned char move;
+	string x_move_str, y_move_str, response;
+	vector<string> summary;
+	stringstream ss;
+	while (num_turns < max_turns) {
+		//Player X goes first.
+		if (x_ai) {
+			move = moveX(s);
+		} else {
+			move = 255;
+			while (move == 255) {
+				cout << "Enter a valid move: ";
+				cin >> response;
+				move = convert_PGN_to_move(response, false);
+			}
+		}
+		x_move_str = convert_move_to_PGN(s, move, true);
+		s = make_move(s, move, true);
+		if (VERBOSE_RESULTS) {
+			cout << "\nPlayer X: " << x_move_str << endl;
+			print_board(s);
+		}
 
-//TODO...
+		//Player Y's turn:
+		if (!x_ai) {
+			move = moveY(s);
+		} else {
+			move = 255;
+			while (move == 255) {
+				cout << "Enter a valid move: ";
+				cin >> response;
+				move = convert_PGN_to_move(response, true);
+			}
+		}
+		if (move == 255) {
+			if (in_checkmate(s)) {
+				cout << "Checkmate.\n";
+			} else {
+				cout << "Stalemate.\n";
+			}
+			ss << right << setw(2) << num_turns + 1;
+			ss << ". " << x_move_str << " {Checkmate. Player X wins.}";
+			summary.push_back(ss.str());
+			break;
+		}
 
-	return 0;
+		y_move_str = convert_move_to_PGN(s, move, false);
+		ss << right << setw(2) << num_turns + 1;
+		ss << ". " << x_move_str << " " << y_move_str;
+		summary.push_back(ss.str());
+		ss.str(string());
+
+		s = make_move(s, move, false);
+		if (VERBOSE_RESULTS) {
+			cout << "\nPlayer Y: " << y_move_str << endl;
+			print_board(s);
+		}
+
+		if (s.R == 255) {
+			cout << "Draw. Checkmate no longer possible.\n";
+			if (VERBOSE_RESULTS) {
+				cout << "Player Y got the Rook!.\n";
+			}
+			break;
+		}
+		num_turns++;
+	}
+
+	cout << "Game ended after " << num_turns << " full turns.\n";
+
+	if (VERBOSE_RESULTS) {
+		cout << "Game summary:\n";
+		for (int i=0; i < (int)summary.size(); i++) {
+			cout << summary[i] << endl;
+		}
+	}
+
 }
 
 
@@ -551,9 +989,8 @@ int play(state s, int max_turns, bool x_ai) {
 Controls the play of the game. Runs automatically choosing best plays.
 Input:	state s - initial state of the board
 		int max_turns - maximum moves per player allowed.
-Output:	int - outcome of the game
 */
-int test_play(state s, int max_turns) {
+void test_play(state s, int max_turns) {
 	int num_turns = 0;
 	unsigned char move;
 	string x_move_str, y_move_str;
@@ -571,7 +1008,15 @@ int test_play(state s, int max_turns) {
 
 		move = moveY(s);
 		if (move == 255) {
-			cout << "Mate.\n";
+			if (in_checkmate(s)) {
+				cout << "Checkmate.\n";
+			} else {
+				cout << "Stalemate.\n";
+			}
+			ss << right << setw(2) << num_turns + 1;
+			ss << ". " << x_move_str << " {Checkmate. Player X wins.}";
+			summary.push_back(ss.str());
+			MATE = true;
 			break;
 		}
 
@@ -588,22 +1033,27 @@ int test_play(state s, int max_turns) {
 		}
 
 		if (s.R == 255) {
-			cout << "Player Y got the Rook!.\n";
+			cout << "Draw. Checkmate no longer possible.\n";
+			if (VERBOSE_RESULTS) {
+				cout << "Player Y got the Rook!.\n";
+			}
 			break;
 		}
 		num_turns++;
 	}
 
-	cout << "Game ended after " << num_turns+1 << " turns.\n";
+	if (MATE) {
+		cout << "Mate on turn " << num_turns+1 << ".\n";
+	} else {
+		cout << "Game concluded in draw after " << num_turns << " full turns.\n";
+	}
 
 	if (VERBOSE_RESULTS) {
 		cout << "Game summary:\n";
 		for (int i=0; i < (int)summary.size(); i++) {
 			cout << summary[i] << endl;
 		}
-	}
-
-	return num_turns;	
+	}	
 }
 
 
@@ -642,8 +1092,7 @@ bool get_is_test() {
 	getline(cin, response);
 	if (response.length() == 0 ||
 		response == "\n") {
-		cout << "Invalid input. exiting...\n";
-		exit(EXIT_FAILURE);
+		err("Invalid input.");
 	}
 	char y_or_n = tolower(response[0]);
 	if (y_or_n == 'y') {
@@ -651,9 +1100,10 @@ bool get_is_test() {
 	} else if (y_or_n == 'n') {
 		return false;
 	} else {
-		cout << "Invalid input. exiting...\n";
-		exit(EXIT_FAILURE);
+		err("Invalid input.");
 	}
+	//suppress warning...
+	return true;
 }
 
 
@@ -672,8 +1122,7 @@ unsigned int get_max_turns() {
 			stringstream(response) >> num_turns;
 		}
 	} catch (exception& e) {
-		cout << "Invalid input. exiting...\n";
-		exit(EXIT_FAILURE);
+		err("Invalid input.");
 	}
 	return num_turns;
 }
@@ -688,8 +1137,7 @@ state get_initial_state() {
 	getline(cin, response);
 	if (response.length() == 0 ||
 		response == "\n") {
-		cout << "Invalid input. exiting...\n";
-		exit(EXIT_FAILURE);
+		err("Invalid input.");
 	}
 	char y_or_n = tolower(response[0]);
 	if (y_or_n == 'y') {
@@ -697,8 +1145,9 @@ state get_initial_state() {
 	} else if (y_or_n == 'n') {
 		return get_state_from_stdin();
 	} else {
-		cout << "Invalid input. exiting...\n";
-		exit(EXIT_FAILURE);
+		err("Invalid input.");
+		//suppress warning...
+		return state(0,0,0);
 	}
 }
 
@@ -707,7 +1156,7 @@ state get_initial_state() {
 
 */
 state get_state_from_file() {
-	cout << "---------------------------------------\n";
+	cout << "\n---------------------------------------\n";
 	cout << "Loading initial game-state from file...\n";
 	ifstream infile;
 	//TODO: allow user defined filename??
@@ -725,8 +1174,7 @@ state get_state_from_file() {
 
 	state s(K, R, k);
 	if (!s.is_valid()) {
-		cout << "Invalid coordinates. exiting...\n";
-		exit(EXIT_FAILURE);
+		err("Invalid board configuration.");
 	} else {
 		cout << "Loaded game:\n" << line << endl;
 		cout << "---------------------------------------\n";
@@ -757,8 +1205,7 @@ state get_state_from_stdin() {
 
 	state s(K, R, k);
 	if (!s.is_valid()) {
-		cout << "Invalid coordinates. exiting...\n";
-		exit(EXIT_FAILURE);
+		err("Invalid board configuration.");
 	} else {
 		cout << "Loaded game:\n";
 		//TODO: print initial coordinates...
@@ -771,6 +1218,28 @@ state get_state_from_stdin() {
 }
 
 
+/* Ask if they want to be player X
+*/
+bool ask_x() {
+	string response;
+	cout << "Are you player X (X goes first) (y/n)? ";
+	getline(cin, response);
+	if (response.length() == 0 ||
+		response == "\n") {
+		err("Invalid input.");
+	}
+	char y_or_n = tolower(response[0]);
+	if (y_or_n == 'y') {
+		return true;
+	} else if (y_or_n == 'n') {
+		return false;
+	} else {
+		err("Invalid input.");
+		//suppress warning...
+		return false;
+	}
+}
+
 /* Converter for reading piece position from stdin
 Input:	string square - Two char notation for rank & file
 			ex: "a1", "e2", "h8" ...
@@ -778,14 +1247,52 @@ Output:	unsigned char - Index of board square as defined in description.
 */
 unsigned char convert_PGN_to_char(string square) {
 	if (square.length() < 2) {
-		cout << "Unable to convert coordinate. exiting...\n";
-		exit(EXIT_FAILURE);
+		err("Unable to convert coordinate.");
 	}
 	unsigned char c;
 	char rank, file;
 	file = square[0] - 'a';
 	rank = square[1] - '1';
+	if (file < 'a' || file > 'h' ||
+		rank < '1' || rank > '8') {
+		err("Invalid coordinate.");
+	}
 	c = (unsigned char)(file*8 + rank);
+	return c;
+}
+
+
+/* Converter for reading player moves from stdin
+Input:	string move_str - Three char notation for piece, rank, & file
+			ex: "Ka1", "Re2", "kh8" ...
+Output:	unsigned char - move.
+*/
+unsigned char convert_PGN_to_move(string move_str, bool player_x) {
+	if (move_str.length() < 3) {
+		cout << "Unable to parse move: " << move_str << endl;
+		return 255;
+	}
+	unsigned char c;
+	char piece, rank, file;
+	piece = move_str[0];
+	file = move_str[1] - 'a';
+	rank = move_str[2] - '1';
+	if (piece != 'K' && piece != 'R' && piece != 'k') {
+		cout << "Invalid piece: " << piece << endl;
+		return 255;
+	} else if ((player_x && piece == 'k') || (!player_x && piece != 'k')) {
+		cout << "Cannot move opposing player's piece.\n";
+		return 255;
+	}
+	if (file < 'a' || file > 'h' ||
+		rank < '1' || rank > '8') {
+		cout << "Invalid coordinate.\n";
+		return 255;
+	}
+	c = (unsigned char)(file*8 + rank);
+	if (piece == 'R') {
+		c += 64;
+	}
 	return c;
 }
 
@@ -867,30 +1374,75 @@ void verify_lam(state s) {
 	}
 }
 
+
+void test_heuristics() {
+	state s = get_state_from_file();
+	vector<unsigned char> moves;
+	moves = list_all_moves_x(s);
+	unsigned char move;
+	string move_str;
+	vector< pair<int, unsigned char> > ranked_moves;
+	int i, rank;
+
+	for (i=0; i < (int)moves.size(); i++) {
+		rank = heuristicX(make_move(s, moves[i], true));
+		ranked_moves.push_back(make_pair(rank, moves[i]));
+	}
+	sort(ranked_moves.begin(), ranked_moves.end());
+	reverse(ranked_moves.begin(), ranked_moves.end());
+
+	cout << "Player X's moves:\n";
+	for (i=0; i < (int)ranked_moves.size(); i++) {
+		rank = ranked_moves[i].first;
+		move = ranked_moves[i].second;
+		move_str = convert_move_to_PGN(s, move, true);
+		cout << "Move: " << move_str << "  h(n): " << rank << endl;
+	}
+
+	moves.clear();
+	ranked_moves.clear();
+	moves = list_all_moves_y(s);
+	for (i=0; i < (int)moves.size(); i++) {
+		rank = heuristicY(make_move(s, moves[i], false));
+		ranked_moves.push_back(make_pair(rank, moves[i]));
+	}
+	sort(ranked_moves.begin(), ranked_moves.end());
+	reverse(ranked_moves.begin(), ranked_moves.end());
+
+	cout << "\nPlayer Y's moves:\n";
+	for (int i=0; i < (int)ranked_moves.size(); i++) {
+		rank = ranked_moves[i].first;
+		move = ranked_moves[i].second;
+		move_str = convert_move_to_PGN(s, move, false);
+		cout << "Move: " << move_str << "  h(n): " << rank << endl;
+	}
+	err("Finished with heuristics test.");
+}
+
+
 /* Main function
 
 */
 int main() {
-	
-	// command line args?
+	//test_heuristics();
 
 	bool is_test = get_is_test();
+	bool x;
+	if (!is_test) {
+		x = ask_x();
+	}
 	unsigned int max_turns = get_max_turns();
 	state s = get_initial_state();
 	if (kings_too_close(s)) {
 		cout << "Invalid initial board...\n";
 	}
 
-	int outcome;
+	//verify_lam(s);
 	if (is_test) {
-		int outcome = test_play(s, max_turns);
+		test_play(s, max_turns);
 	} else { //competition play
-		verify_lam(s);
-		//int outcome = play(s, max_turns);
+		play(s, max_turns, !x);
 	}
-	//cout << "Number of moves made: " << outcome << endl;
-	
-
 	return 0;
 }
 
