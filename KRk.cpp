@@ -69,6 +69,7 @@ The game summary is saved to file in Portable Game Notation.
 #include <cctype>
 #include <exception>
 #include <utility>
+#include "KRk.h"
 using namespace std;
 
 #define VERBOSE_RESULTS true
@@ -76,66 +77,6 @@ using namespace std;
 #define INPUT_FILE "testCase.txt"
 #define TRY_ADD_MOVE_Y s2=make_move(s,move,false);if(!y_in_check(s2)&&!kings_too_close(s2)){moves.push_back(move);}
 #define TRY_ADD_KING if(K_can_move(s,move)){moves.push_back(move);}
-
-bool MATE = false;
-enum DIR {NONE=0, UP, DOWN, LEFT, RIGHT, UL, UR, DL, DR};
-
-
-/* State class
-Defines variables to represent the state of the board.
-Also includes a validation function.
-*/
-class state {
-public:
-	unsigned char K;
-	unsigned char R;
-	unsigned char k;
-	state(unsigned char a, unsigned char b, unsigned char c) {
-		K = a;
-		R = b;
-		k = c;
-	}
-	bool is_valid() {
-		if (K == R || R == k || K == k ||
-			K > 63 || R > 63 || k > 63) {
-			return false;
-		} else {
-			return true;
-		}
-	}
-};
-
-
-void err(string msg);
-unsigned char moveX(state s);
-unsigned char moveY(state s);
-int get_push_dir(state s);
-state orient(state s, int& dir);
-int heuristicX(state s);
-int heuristicY(state s);
-int heuristicY2(state s);
-bool is_valid_move(state s, unsigned char move, bool player_x);
-state make_move(state s, unsigned char move, bool player_x);
-vector<unsigned char> list_all_moves_x(state s);
-vector<unsigned char> list_all_moves_y(state s);
-bool K_can_move(state s, unsigned char move);
-bool kings_too_close(state s);
-bool y_in_check(state s);
-bool in_checkmate(state s);
-void play(state s, int max_turns, bool x_ai);
-void test_play(state s, int max_turns);
-void print_board(state s);
-bool get_is_test();
-unsigned int get_max_turns();
-state get_initial_state();
-state get_state_from_file();
-state get_state_from_stdin();
-bool ask_x();
-unsigned char convert_PGN_to_char(string square);
-unsigned char convert_PGN_to_move(string move_str, bool player_x);
-string convert_move_to_PGN(state s, unsigned char move, bool player_x);
-void verify_lam(state s);
-void test_orient(state s);
 
 
 void err(string msg) {
@@ -204,7 +145,7 @@ unsigned char moveY(state s) {
 	vector< pair<int, unsigned char> > ranked_moves;
 	int rank;
 	for (int i=0; i < (int)moves.size(); i++) {
-		rank = heuristicY2(make_move(s, moves[i], false));
+		rank = heuristicY(make_move(s, moves[i], false));
 		ranked_moves.push_back(make_pair(rank, moves[i]));
 	}
 	
@@ -323,8 +264,6 @@ state orient(state s, int& dir) {
 	}
 	return s;
 }
-
-
 
 
 /* Heuristic for player X
@@ -522,7 +461,7 @@ Output:	int - the value of the board for player Y
 			Bad positions should return a relatively low number
 			and good positions should return a high number.
 */
-int heuristicY(state s) {
+int heuristicY_old(state s) {
 	//Always capture rook if possible:
 	if (s.R == 255) {
 		return 65536;
@@ -666,7 +605,7 @@ In rook row && check??: 50
 In rook row && check && pin: 0 //Push & mate
 In rook row, no check: 1500
 */
-int heuristicY2(state s) {
+int heuristicY(state s) {
 	//Always capture rook if possible:
 	if (s.R == 255) {
 		return 65536;
@@ -679,6 +618,9 @@ int heuristicY2(state s) {
 	unsigned char kfile = s.k / 8;
 	unsigned char rank2 = krank * 2;
 	unsigned char file2 = kfile * 2;
+
+	//TODO: rewrite for orient...
+	//  which means, make a get_Y_dir()...
 
 	// If blocked by rook move toward rook (unless king trap)
 	if (krank < 3 && Rrank == krank + 1) {//Rook above
@@ -1261,7 +1203,8 @@ Controls the play of the game. Runs automatically choosing best plays.
 Input:	state s - initial state of the board
 		int max_turns - maximum moves per player allowed.
 */
-void test_play(state s, int max_turns) {
+int test_play(state s, int max_turns) {
+	bool MATE = false;
 	int num_turns = 0;
 	unsigned char move;
 	string x_move_str, y_move_str;
@@ -1314,7 +1257,8 @@ void test_play(state s, int max_turns) {
 	}
 
 	if (MATE) {
-		cout << "Mate on turn " << num_turns+1 << ".\n";
+		num_turns++;
+		cout << "Mate on turn " << num_turns << ".\n";
 	} else {
 		cout << "Game concluded in draw after " << num_turns << " full turns.\n";
 	}
@@ -1324,7 +1268,8 @@ void test_play(state s, int max_turns) {
 		for (int i=0; i < (int)summary.size(); i++) {
 			cout << summary[i] << endl;
 		}
-	}	
+	}
+	return num_turns;
 }
 
 
@@ -1675,7 +1620,7 @@ void test_heuristics() {
 	ranked_moves.clear();
 	moves = list_all_moves_y(s);
 	for (i=0; i < (int)moves.size(); i++) {
-		rank = heuristicY2(make_move(s, moves[i], false));
+		rank = heuristicY(make_move(s, moves[i], false));
 		ranked_moves.push_back(make_pair(rank, moves[i]));
 	}
 	sort(ranked_moves.begin(), ranked_moves.end());
@@ -1701,30 +1646,5 @@ void test_orient(state s) {
 }
 
 
-/* Main function
 
-*/
-int main() {
-	test_heuristics();
-	//test_orient(get_state_from_file());
-
-	bool is_test = get_is_test();
-	bool x;
-	if (!is_test) {
-		x = ask_x();
-	}
-	unsigned int max_turns = get_max_turns();
-	state s = get_initial_state();
-	if (kings_too_close(s)) {
-		cout << "Invalid initial board...\n";
-	}
-
-	//verify_lam(s);
-	if (is_test) {
-		test_play(s, max_turns);
-	} else { //competition play
-		play(s, max_turns, !x);
-	}
-	return 0;
-}
 
