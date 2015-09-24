@@ -174,26 +174,25 @@ unsigned char moveY(state s) {
 //1=up, 2=down, 3=left, 4=right
 //5=UL, 6=UR, 7=DL, 8=DR
 int get_push_dir(state s) {
+	//TODO: if the king goes to the edge... still push - (krank >= 4 && Rrank == krank-2)
 	int dir = NONE;
-	unsigned char Krank = s.K % 8;
 	unsigned char Rrank = s.R % 8;
 	unsigned char krank = s.k % 8;
-	unsigned char Kfile = s.K / 8;
 	unsigned char Rfile = s.R / 8;
 	unsigned char kfile = s.k / 8;
 	if (krank >= 4 && Rrank == krank-1) {//up
 		if (kfile < 4 && Rfile == kfile+1)  {//left
-			if (7-Krank == Kfile) {//UL
+			if (7-krank == kfile) {//UL
 				dir = UL;
-			} else if (7-Krank > Kfile) {//left more dominant
+			} else if (7-krank > kfile) {//left more dominant
 				dir = LEFT;
 			} else {//up more dominant
 				dir = UP;
 			}
 		} else if (kfile >= 4 && Rfile == kfile-1) {//right
-			if (Krank == Kfile) {//UR
+			if (krank == kfile) {//UR
 				dir = UR;
-			} else if (Krank < Kfile) {//right more dominant
+			} else if (krank < kfile) {//right more dominant
 				dir = RIGHT;
 			} else {//up more dominant
 				dir = UP;
@@ -203,17 +202,17 @@ int get_push_dir(state s) {
 		}
 	} else if (krank < 4 && Rrank == krank+1) {//down
 		if (kfile < 4 && Rfile == kfile+1)  {//left
-			if (Krank == Kfile) {//DL
+			if (krank == kfile) {//DL
 				dir = DL;
-			} else if (Krank > Kfile) {//left more dominant
+			} else if (krank > kfile) {//left more dominant
 				dir = LEFT;
 			} else {//down more dominant
 				dir = DOWN;
 			}
 		} else if (kfile >= 4 && Rfile == kfile-1) {//right
-			if (Krank == 7-Kfile) {//DR
+			if (krank == 7-kfile) {//DR
 				dir = DR;
-			} else if (Krank > 7-Kfile) {//right more dominant
+			} else if (krank > 7-kfile) {//right more dominant
 				dir = RIGHT;
 			} else {//down more dominant
 				dir = DOWN;
@@ -302,49 +301,39 @@ int heuristicX(state s) {
 	//If k can capture R, return 0. If checkmate, return 2^16
 	if ((rd == -1 || rd == 0 || rd == 1) &&
 		(fd == -1 || fd == 0 || fd == 1)) {
-		//TODO: unless K adj to R... (protected check)
+		//Unless K adj to R... (protected check)
 		if ((Kfile == Rfile-1 || Kfile == Rfile || Kfile == Rfile+1) &&
 			(Krank == Rrank-1 || Krank == Rrank || Krank == Rrank+1)) {
 			//find dist to K target...
 			int r_target = krank;
 			int f_target = kfile;
-			//TODO: not just if up,down,l,r... which is closer to edge?
-			if (Rrank == krank-1 && Rfile == kfile-1) {//k is u-r
-				if (Rrank < Rfile) {
-					r_target -= 2;
-				} else if (Rrank > Rfile) {
-					f_target -= 2;
+			if (dir == NONE) {
+				return 500; //not that great of a position...
+			} else if (dir == UR) {
+				r_target = krank;
+				f_target = kfile;
+				int r_dist = Krank - r_target;
+				if (r_dist < 0) {
+					r_dist = 0 - r_dist;
 				}
-			} else if (Rrank == krank-1 && Rfile == kfile+1) {//k is u-l
-				if (Rrank < Rfile) {
-					r_target -= 2;
-				} else if (Rrank > Rfile) {
-					f_target += 2;
+				int f_dist = Kfile - f_target;
+				if (f_dist < 0) {
+					f_dist = 0 - f_dist;
 				}
-			} else if (Rrank == krank+1 && Rfile == kfile+1) {//k is d-l
-				if (Rrank < Rfile) {
-					r_target += 2;
-				} else if (Rrank > Rfile) {
-					f_target += 2;
+				prot_factor = 12 - (r_dist+f_dist);
+				prot_factor = prot_factor*prot_factor;
+			} else if (dir == UP) {
+				//tricky...
+				if (Rfile > kfile) {
+					prot_factor = (7 - Rfile) * 10;
+					prot_factor += (Rfile - Kfile) * 10;
+				} else {
+					prot_factor = Rfile * 10;
+					prot_factor += (Kfile - Rfile) * 10;
 				}
-			} else if (Rrank == krank+1 && Rfile == kfile-1) {//k is d-r
-				if (Rrank < Rfile) {
-					r_target += 2;
-				} else if (Rrank > Rfile) {
-					f_target -= 2;
-				}
+			} else {
+				err("Reached what should be a dead block in player X's heuristic.");
 			}
-			int r_dist = Krank - r_target;
-			if (r_dist < 0) {
-				r_dist = 0 - r_dist;
-			}
-			int f_dist = Kfile - f_target;
-			if (f_dist < 0) {
-				f_dist = 0 - f_dist;
-			}
-			prot_factor = 10 - (r_dist+f_dist);
-			prot_factor = prot_factor*prot_factor;
-			//return prot_factor;
 		} else {
 			return 0;
 		}
@@ -365,9 +354,9 @@ int heuristicX(state s) {
 	//if K on wrong side, add 0
 	//if K on line - add 100 if between R&k, else add 500
 	//if K on correct side - 3k + rdk stuff
-	if (dir == 0) {
+	if (dir == NONE) {
 		//
-	} else if (dir == 1) {//Push to top...
+	} else if (dir == UP) {//Push to top...
 		rdk = krank - Krank;
 		fdk = kfile - Kfile;
 		if (Rfile == 0) {
@@ -399,44 +388,38 @@ int heuristicX(state s) {
 			}
 		}
 		if (Krank == krank-2 && Kfile == kfile) {
-			pin_factor = 6;
+			pin_factor = 50;
 		}
-	} else if (dir == 5) {//UL
-		rdk = krank - Krank;
+	} else if (dir == UR) {//UL - shit. TODO: unfuck this mess...
+		//Rook an k are on diagonal and rook protected...
+		R_factor = 1000 * Rrank;//1k more for each row up.
+		rdk = (krank - Krank) - 2;
 		fdk = kfile - Kfile;
 		if (Rfile == 0) {
 			R_on_edge_factor = 50;
-			fdk--;
 		} else if (Rfile == 7) {
 			R_on_edge_factor = 50;
-			fdk++;
 		}
-		rdk = (krank-2) - Krank;
-		if (Rrank == Krank) {
-			//If the king is in the way...
-			if ((kfile < Kfile && Kfile < Rfile) ||
-				(kfile > Kfile && Kfile > Rfile)) {
-				K_factor = 100;
-			} else {
-				R_factor = 1000 * Rrank;//1k more for each row up.
-				R_factor += fd*fd;
-				K_factor = 500;
-			}
+		if ((Rrank==Krank && Kfile==Rfile+1) ||
+			(Rfile==Kfile && Krank==Rrank+1)) {
+			K_factor = 100;
 		} else {
-			R_factor = 1000 * Rrank;//1k more for each row up.
-			R_factor += fd*fd;
-			// K on the right side?
 			if (Krank > Rrank) {
 				K_factor = 0;
-			} else {
+			} else if (Krank == Rrank) {
+				//TODO: Kfile??
+				K_factor = 500;
+			} else {//K is below R somewhere!
 				K_factor = 1000;
 			}
 		}
 		if (Krank == krank-2 && Kfile == kfile) {
-			pin_factor = 6;
+			pin_factor = 50;
 		}
 	} else {
-		err("double oops...");
+		stringstream ss;
+		ss << "Orient did not fix direction? - dir: " << (int)dir;
+		err(ss.str());
 	}
 
 	if (rdk > 0) {
@@ -450,7 +433,7 @@ int heuristicX(state s) {
 	}
 
 	h = R_factor + K_factor + R_on_edge_factor + pin_factor + prot_factor;
-	return rdk;//h;
+	return h;
 }
 
 
@@ -619,8 +602,11 @@ int heuristicY(state s) {
 	unsigned char rank2 = krank * 2;
 	unsigned char file2 = kfile * 2;
 
-	//TODO: rewrite for orient...
+	//TODO: rewrite for orient??? maybe..
 	//  which means, make a get_Y_dir()...
+
+	//TODO: get kh7 higher than kg8 for x.K(6,4),x.R(6,6),y.K(7,7)
+
 
 	// If blocked by rook move toward rook (unless king trap)
 	if (krank < 3 && Rrank == krank + 1) {//Rook above
