@@ -78,6 +78,20 @@ int stripped_test_play(state s, int max_turns) {
 }
 
 
+void print_state(state s) {
+	char buf[80];
+	int a,b,c,d,e,f;
+	a = s.K/8 + 1;
+	b = s.K%8 + 1;
+	c = s.R/8 + 1;
+	d = s.R%8 + 1;
+	e = s.k/8 + 1;
+	f = s.k%8 + 1;
+	sprintf(buf,"x.K(%d,%d),x.R(%d,%d),y.K(%d,%d)\n",a,b,c,d,e,f);
+	cout << buf;
+}
+
+
 void print_states(vector< pair<int, state> > ranked_boards) {
 	char buf[80];
 	state s;
@@ -128,15 +142,21 @@ void run_finder() {
 
 	for (int i=0; i<64; i++) {
 		for (int j=0; j<64; j++) {
-			for (int k=0; k<4; k++) {// Let's just try up to 4 for now...
-				//In fact, can we limit to quadrant 1 and assume all configs met??
+			for (int k=0; k<28; k++) {
 				s = state(i, j, k);
+				if (k%8 == 4) {
+					k += 4;
+				}
 				if (!s.is_valid()) {
 					continue;
 				} else if (kings_too_close(s) || y_in_check(s)) {
 					continue;
 				}
 				turns = stripped_test_play(s, 50);
+				// if (turns == 50) {
+				// 	print_state(s);
+				// 	return;
+				// }
 				if (turns > lower_bound) {
 					ranked_boards.push_back(make_pair(turns, s));
 				}
