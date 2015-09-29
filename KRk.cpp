@@ -69,19 +69,25 @@ The game summary is saved to file in Portable Game Notation.
 #include <cctype>
 #include <exception>
 #include <utility>
+#include <cmath>
 #include "KRk.h"
 using namespace std;
 
-#define VERBOSE_RESULTS true
-#define DEBUG_VERBOSE false
+
 #define INPUT_FILE "testCase.txt"
 #define TRY_ADD_MOVE_Y s2=make_move(s,move,false);if(!y_in_check(s2)&&!kings_too_close(s2)){moves.push_back(move);}
 #define TRY_ADD_KING if(K_can_move(s,move)){moves.push_back(move);}
 
+
 state REMEMBERED, R2;
+
 
 bool operator==(const state& a, const state& b) {
 	return (a.k==b.k && a.K==b.K && a.R==b.R);
+}
+
+bool operator<(const state& a, const state& b) {
+	return a.k<b.k;//return false...
 }
 
 
@@ -114,18 +120,16 @@ unsigned char moveX(state s) {
 	sort(ranked_moves.begin(), ranked_moves.end());
 	reverse(ranked_moves.begin(), ranked_moves.end());
 
-	if (DEBUG_VERBOSE) {
-		string move_str;
-		unsigned char move;
-		for (int i=0; i < (int)ranked_moves.size(); i++) {
-			rank = ranked_moves[i].first;
-			move = ranked_moves[i].second;
-			move_str = convert_move_to_PGN(s, move, true);
-			cout << "Move: " << move_str << "  h(n): " << rank << endl;
-		}
-	}
-
-	// recurse??
+	// if (DEBUG_VERBOSE) {
+	// 	string move_str;
+	// 	unsigned char move;
+	// 	for (int i=0; i < (int)ranked_moves.size(); i++) {
+	// 		rank = ranked_moves[i].first;
+	// 		move = ranked_moves[i].second;
+	// 		move_str = convert_move_to_PGN(s, move, true);
+	// 		cout << "Move: " << move_str << "  h(n): " << rank << endl;
+	// 	}
+	// }
 
 	move = ranked_moves[0].second;
 	if (make_move(s, move, true) == R2) {
@@ -174,12 +178,242 @@ unsigned char moveY(state s) {
 		}
 	}
 
+	move = ranked_moves[0].second;
+	return move;
+}
+
+
+
+
+unsigned char ex_minimax_moveX(state s, int depth) {
+	unsigned char move = 0;
+
+	vector<unsigned char> moves = list_all_moves_x(s);
+	if (moves.size() == 0) {
+		err("No moves found for X?!?!");
+	}
+	vector< pair<double, unsigned char> > ranked_moves;
+	double rank;
+	for (int i=0; i < (int)moves.size(); i++) {
+		rank = (double)heuristicX(make_move(s, moves[i], true));
+		if (rank > 1.0) {
+			ranked_moves.push_back(make_pair(rank, moves[i]));
+		}
+	}
+
+	// Keep at most 5 best moves.
+	sort(ranked_moves.begin(), ranked_moves.end());
+	reverse(ranked_moves.begin(), ranked_moves.end());
+	ranked_moves.resize(5);
+
+	rank = ranked_moves[0].first;
+	// terminal moves should be greater than 30k
+	if (rank < 30000.0 && depth > 0) {
+		// go through all (rank, move) pairs
+		// update rank *= (sum([y_move_prob] . [best_x_H]))
+		for (int i=0; i < (int)ranked_moves.size(); i++) {
+			rank = ranked_moves[i].first;
+			move = ranked_moves[i].second;
+			state s2 = make_move(s, move, true);
+			vector<unsigned char> y_moves = list_all_moves_y(s2);
+			vector< pair<double, state> > y_ranked_states;
+			double rank;
+			//if Y can't respond, X should use this move.
+			if (y_moves.size() == 0) {
+				if (DEBUG_VERBOSE) {
+					cout << "Found mate in " << depth << " moves.\n";
+				}
+				return move;
+			}
+			//find player Y responses [(hY(s3), s3), (_, _), ...]
+			for (int j=0; j < (int)y_moves.size(); j++) {
+				state s3 = make_move(s2, y_moves[j], false);
+				rank = (double)heuristicY(s3);
+				if (rank > 1.0) {
+					y_ranked_states.push_back(make_pair(rank, s3));
+				}
+			}
+			//sort them by rank and keep at most 3
+			sort(y_ranked_states.begin(), y_ranked_states.end());
+			reverse(y_ranked_states.begin(), y_ranked_states.end());
+			y_ranked_states.resize(3);
+			//get the total heuristic for the moves (to make percents)
+			double total = 0.0;
+			for (int j=0; j < (int)y_ranked_states.size(); j++) {
+				total += y_ranked_states[j].first;
+			}
+			//fix percentages up a little bit...
+			for (int j=0; j < (int)y_ranked_states.size(); j++) {
+				double temp = y_ranked_states[j].first / total;
+				//decrease the probability of opponent choosing bad moves...
+				y_ranked_states[j].first = temp * temp;
+			}
+			//renormalize to total 100%
+			total = 0.0;
+			for (int j=0; j < (int)y_ranked_states.size(); j++) {
+				total += y_ranked_states[j].first;
+			}
+			for (int j=0; j < (int)y_ranked_states.size(); j++) {
+				y_ranked_states[j].first /= total;
+			}
+			//for each Y move, get prob. Y will make move, and best response
+			//multiply current heuristic by average heuristic value
+			//of the state after our next move.
+			double total2 = 0.0;
+			for (int j=0; j < (int)y_ranked_states.size(); j++) {
+				state s3 = y_ranked_states[j].second;
+				unsigned char best_move = ex_minimax_moveX(s3, depth-1);
+				int hX_2nd = heuristicX(make_move(s3, best_move, true));
+				total2 += hX_2nd * y_ranked_states[j].first;
+			}
+			ranked_moves[i].first *= sqrt(total2);//try sqrt??
+		}
+		//sort the moves again now that the ranks have changed.
+		sort(ranked_moves.begin(), ranked_moves.end());
+		reverse(ranked_moves.begin(), ranked_moves.end());
+	}
+
+	if (DEBUG_VERBOSE && depth == DEPTH) {
+		string move_str;
+		unsigned char move;
+		for (int i=0; i < (int)ranked_moves.size(); i++) {
+			rank = ranked_moves[i].first;
+			move = ranked_moves[i].second;
+			move_str = convert_move_to_PGN(s, move, true);
+			cout << "Move: " << move_str << "  h(n): " << rank << endl;
+		}
+	}
+
+	move = ranked_moves[0].second;
+	if (depth == DEPTH) {
+		if (make_move(s, move, true) == R2 && ranked_moves.size() > 1) {
+			move = ranked_moves[1].second;
+		}
+		R2 = REMEMBERED;
+		REMEMBERED = make_move(s, move, true);
+	}
+	return move;
+}
+
+
+unsigned char ex_minimax_moveY(state s, int depth) {
+	depth -= 1;
+	unsigned char move = 0;
+	vector<unsigned char> moves = list_all_moves_y(s);
+	if (moves.size() == 0) {
+		if (DEBUG_VERBOSE) {
+			cout << "No moves found for Y...\n";
+		}
+		//TODO: where return to - check for ==255 (mate).
+		return 255;
+	}
+	vector< pair<int, unsigned char> > ranked_moves;
+	int rank;
+	for (int i=0; i < (int)moves.size(); i++) {
+		rank = heuristicY(make_move(s, moves[i], false));
+		ranked_moves.push_back(make_pair(rank, moves[i]));
+	}
+	
+	sort(ranked_moves.begin(), ranked_moves.end());
+	reverse(ranked_moves.begin(), ranked_moves.end());
+
+	if (DEBUG_VERBOSE) {
+		string move_str;
+		unsigned char move;
+		for (int i=0; i < (int)ranked_moves.size(); i++) {
+			rank = ranked_moves[i].first;
+			move = ranked_moves[i].second;
+			move_str = convert_move_to_PGN(s, move, false);
+			cout << "Move: " << move_str << "  h(n): " << rank << endl;
+		}
+	}
+
 	// recurse??
 
 	move = ranked_moves[0].second;
 	return move;
 }
 
+unsigned char maximax_moveX(state s, int depth) {
+	unsigned char move = 0;
+
+	vector<unsigned char> moves = list_all_moves_x(s);
+	if (moves.size() == 0) {
+		err("No moves found for X?!?!");
+	}
+	vector< pair<int, unsigned char> > ranked_moves;
+	int s2_rank;
+	for (int i=0; i < (int)moves.size(); i++) {
+		s2_rank = heuristicX(make_move(s, moves[i], true));
+		if (s2_rank > 1) {
+			ranked_moves.push_back(make_pair(s2_rank, moves[i]));
+		}
+	}
+
+	// Keep at most 5 best moves.
+	sort(ranked_moves.begin(), ranked_moves.end());
+	reverse(ranked_moves.begin(), ranked_moves.end());
+	ranked_moves.resize(5);
+
+	// terminal moves should be greater than 30k
+	if (ranked_moves[0].first < 30000 && depth > 0) {
+		// go through all (rank, move) pairs
+		for (int i=0; i < (int)ranked_moves.size(); i++) {
+			move = ranked_moves[i].second;
+			state s2 = make_move(s, move, true);
+			vector<unsigned char> y_moves = list_all_moves_y(s2);
+			//if Y can't respond, X should use this move.
+			if (y_moves.size() == 0) {
+				if (DEBUG_VERBOSE) {
+					cout << "Found mate in " << depth << " moves.\n";
+				}
+				return move;
+			}
+			//find player Y responses [(hY(s3), s3), (_, _), ...]
+			int s3_rank;
+			int best_rank = 0;
+			state s3;
+			for (int j=0; j < (int)y_moves.size(); j++) {
+				state temp_state = make_move(s2, y_moves[j], false);
+				s3_rank = heuristicY(s3);
+				if (s3_rank > best_rank) {
+					s3 = temp_state;
+					best_rank = s3_rank;
+				}
+			}
+
+			//get our best response, add our H val to that.
+			unsigned char best_move = maximax_moveX(s3, depth-1);
+			int hX_2nd = heuristicX(make_move(s3, best_move, true));
+
+			ranked_moves[i].first = hX_2nd;
+		}
+		//sort the moves again now that the ranks have changed.
+		sort(ranked_moves.begin(), ranked_moves.end());
+		reverse(ranked_moves.begin(), ranked_moves.end());
+	}
+
+	if (DEBUG_VERBOSE && depth == DEPTH) {
+		string move_str;
+		unsigned char move;
+		for (int i=0; i < (int)ranked_moves.size(); i++) {
+			int rank = ranked_moves[i].first;
+			move = ranked_moves[i].second;
+			move_str = convert_move_to_PGN(s, move, true);
+			cout << "Move: " << move_str << "  h(n): " << rank << endl;
+		}
+	}
+
+	move = ranked_moves[0].second;
+	if (depth == DEPTH) {
+		if (make_move(s, move, true) == R2 && ranked_moves.size() > 1) {
+			move = ranked_moves[1].second;
+		}
+		R2 = REMEMBERED;
+		REMEMBERED = make_move(s, move, true);
+	}
+	return move;
+}
 
 //0 = No push direction
 //1=up, 2=down, 3=left, 4=right
@@ -213,22 +447,22 @@ int get_push_dir(state s) {
 			dir = DOWN;
 		}
 	}
-	if (DEBUG_VERBOSE) {
-		cout << endl << endl;
-		print_board(s);
-		cout << "Direction: ";
-		switch (dir) {
-			case NONE: cout<<"NONE\n";break;
-			case UP: cout<<"UP\n";break;
-			case DOWN: cout<<"DOWN\n";break;
-			case LEFT: cout<<"LEFT\n";break;
-			case RIGHT: cout<<"RIGHT\n";break;
-			case UR: cout<<"UR\n";break;
-			case UL: cout<<"UL\n";break;
-			case DR: cout<<"DR\n";break;
-			case DL: cout<<"DL\n";break;
-		}
-	}
+	// if (DEBUG_VERBOSE) {
+	// 	cout << endl << endl;
+	// 	print_board(s);
+	// 	cout << "Direction: ";
+	// 	switch (dir) {
+	// 		case NONE: cout<<"NONE\n";break;
+	// 		case UP: cout<<"UP\n";break;
+	// 		case DOWN: cout<<"DOWN\n";break;
+	// 		case LEFT: cout<<"LEFT\n";break;
+	// 		case RIGHT: cout<<"RIGHT\n";break;
+	// 		case UR: cout<<"UR\n";break;
+	// 		case UL: cout<<"UL\n";break;
+	// 		case DR: cout<<"DR\n";break;
+	// 		case DL: cout<<"DL\n";break;
+	// 	}
+	// }
 	return dir;
 }
 
@@ -380,15 +614,15 @@ int heuristicX(state s) {
 		R_factor = 1000 * Rrank;//1k more for each row up.
 		R_factor += fd*fd*2;
 		if (Rfile == 0 || Rfile == 7) {
-			R_on_edge_factor = 45;
+			R_on_edge_factor = 55;
 		}
 		if (Krank > Rrank) {
-			K_factor = (7-Krank) * 90;
+			K_factor = (7-Krank) * 100;
 		} else if (Rrank == Krank) {
 			//If the king is in the way...
 			if ((kfile < Kfile && Kfile < Rfile) ||
 				(kfile > Kfile && Kfile > Rfile)) {
-				K_factor = Krank * -30;
+				K_factor = Krank * -20;
 			} else {
 				K_factor = 800;// + ((Kfile-Rfile)*(Kfile-Rfile)); ??
 			}
@@ -396,10 +630,10 @@ int heuristicX(state s) {
 			K_factor = 1000;
 			if ((Rfile < Kfile && Kfile <= kfile && kfile - Rfile > 2) ||
 				(Rfile > Kfile && Kfile >= kfile && Rfile - kfile > 2)) {
-				K_factor += 20;
+				K_factor += 30 * Krank;
 			}
 			if (Kfile == kfile && Krank == krank-2) {
-				K_factor -= 35;
+				K_factor -= 45;
 			}
 		}
 	} else {//Rook below k, more than one rank
@@ -1391,9 +1625,9 @@ state get_state_from_file() {
 	} else if (VERBOSE_RESULTS) {
 		cout << "Loaded game:\n" << line << endl;
 		cout << "---------------------------------------\n";
-		print_board(s);
 	}
 	infile.close();
+	print_board(s);
 	return s;
 }
 

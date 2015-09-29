@@ -22,14 +22,11 @@ using namespace std;
 #define TRY_ADD_KING if(K_can_move(s,move)){moves.push_back(move);}
 
 
-
 void print_states(vector< pair<int, state> > ranked_boards);
 void save_states_to_file(vector< pair<int, state> > ranked_boards);
 void run_finder();
 
-bool operator<(const state& a, const state& b) {
-	return a.k<b.k;//return false...
-}
+
 
 /* Game controller for tests
 Controls the play of the game. Runs automatically choosing best plays.
@@ -152,7 +149,7 @@ void run_finder() {
 				} else if (kings_too_close(s) || y_in_check(s)) {
 					continue;
 				}
-				turns = stripped_test_play(s, 50);
+				turns = stripped_test_play(s, 35);
 				// if (turns == 50) {
 				// 	print_state(s);
 				// 	return;

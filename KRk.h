@@ -4,6 +4,9 @@
 #include <string>
 #include <vector>
 
+#define VERBOSE_RESULTS true
+#define DEBUG_VERBOSE false
+#define DEPTH 1
 
 enum DIR {NONE=0, UP, DOWN, LEFT, RIGHT, UL, UR, DL, DR};
 
@@ -37,11 +40,15 @@ public:
 	}
 };
 
-
+bool operator==(const state& a, const state& b);
+bool operator<(const state& a, const state& b);
 
 void err(std::string msg);
 unsigned char moveX(state s);
 unsigned char moveY(state s);
+unsigned char ex_minimax_moveX(state s, int depth);
+unsigned char ex_minimax_moveY(state s, int depth);
+unsigned char maximax_moveX(state s, int depth);
 int get_push_dir(state s);
 state orient(state s, int& dir);
 void translate_diag(unsigned char& Krank, unsigned char& Kfile,
