@@ -183,7 +183,25 @@ unsigned char moveY(state s) {
 }
 
 
+unsigned char look_moveX(state s) {
+	unsigned char move = 0;
+	vector<unsigned char> moves = list_all_moves_x(s);
+	if (moves.size() == 0) {
+		err("No moves found for X?!?!");
+	}
+	vector< pair<int, unsigned char> > ranked_moves;
+	int rank;
+	for (int i=0; i < (int)moves.size(); i++) {
+		rank = heuristicX(make_move(s, moves[i], true));
+		ranked_moves.push_back(make_pair(rank, moves[i]));
+	}
+	
+	sort(ranked_moves.begin(), ranked_moves.end());
+	reverse(ranked_moves.begin(), ranked_moves.end());
 
+	move = ranked_moves[0].second;
+	return move;
+}
 
 unsigned char ex_minimax_moveX(state s, int depth) {
 	unsigned char move = 0;
@@ -296,15 +314,10 @@ unsigned char ex_minimax_moveX(state s, int depth) {
 }
 
 
-unsigned char ex_minimax_moveY(state s, int depth) {
-	depth -= 1;
+unsigned char minimax_moveY(state s, int depth) {
 	unsigned char move = 0;
 	vector<unsigned char> moves = list_all_moves_y(s);
 	if (moves.size() == 0) {
-		if (DEBUG_VERBOSE) {
-			cout << "No moves found for Y...\n";
-		}
-		//TODO: where return to - check for ==255 (mate).
 		return 255;
 	}
 	vector< pair<int, unsigned char> > ranked_moves;
@@ -314,25 +327,96 @@ unsigned char ex_minimax_moveY(state s, int depth) {
 		ranked_moves.push_back(make_pair(rank, moves[i]));
 	}
 	
+	//sort and keep at most best 4 moves.
 	sort(ranked_moves.begin(), ranked_moves.end());
 	reverse(ranked_moves.begin(), ranked_moves.end());
+	if (ranked_moves.size() > 4) {
+		ranked_moves.resize(4);
+	}
 
-	if (DEBUG_VERBOSE) {
-		string move_str;
-		unsigned char move;
-		for (int i=0; i < (int)ranked_moves.size(); i++) {
-			rank = ranked_moves[i].first;
-			move = ranked_moves[i].second;
-			move_str = convert_move_to_PGN(s, move, false);
-			cout << "Move: " << move_str << "  h(n): " << rank << endl;
+	//Look our heuristics to X replies (best X reply...)
+	int val;
+	int best_val = 0;
+	int best_move_index = 0;
+	if (depth > 0 && ranked_moves[0].first < 30000) {
+		for (int i=0; i<(int)ranked_moves.size(); i++) {
+			//s2 is state after our move
+			state s2 = make_move(s, ranked_moves[i].second, false);
+			unsigned char reply = look_moveX(s2);
+			//s3 is state after Xs best reply - skip the minimize step...
+			state s3 = make_move(s2, reply, true);
+			//recurse and decrement depth
+			//mark above move with heuristic of best lower move
+			unsigned char recurse_move = minimax_moveY(s3, depth-1);
+			if (recurse_move == 255) {
+				val = 0;
+			} else {
+				val = heuristicY(make_move(s3, recurse_move, false));
+			}
+			if (val > best_val) {
+				best_move_index = i;
+				best_val = val;
+			}
 		}
 	}
 
-	// recurse??
-
-	move = ranked_moves[0].second;
+	move = ranked_moves[best_move_index].second;
 	return move;
 }
+
+
+
+unsigned char additive_minimax_moveY(state s, int depth) {
+	unsigned char move = 0;
+	vector<unsigned char> moves = list_all_moves_y(s);
+	if (moves.size() == 0) {
+		return 255;
+	}
+	vector< pair<int, unsigned char> > ranked_moves;
+	int rank;
+	for (int i=0; i < (int)moves.size(); i++) {
+		rank = heuristicY(make_move(s, moves[i], false));
+		ranked_moves.push_back(make_pair(rank, moves[i]));
+	}
+	
+	//sort and keep at most best 4 moves.
+	sort(ranked_moves.begin(), ranked_moves.end());
+	reverse(ranked_moves.begin(), ranked_moves.end());
+	if (ranked_moves.size() > 4) {
+		ranked_moves.resize(4);
+	}
+
+	//Look our heuristics to X replies (best X reply...)
+	int val;
+	int best_val = 0;
+	int best_move_index = 0;
+	if (depth > 0 && ranked_moves[0].first < 30000) {
+		for (int i=0; i<(int)ranked_moves.size(); i++) {
+			//s2 is state after our move
+			state s2 = make_move(s, ranked_moves[i].second, false);
+			unsigned char reply = look_moveX(s2);
+			//s3 is state after Xs best reply - skip the minimize step...
+			state s3 = make_move(s2, reply, true);
+			//recurse and decrement depth
+			//mark above move with heuristic of best lower move
+			unsigned char recurse_move = minimax_moveY(s3, depth-1);
+			if (recurse_move == 255) {
+				val = 0;
+			} else {
+				val = heuristicY(make_move(s3, recurse_move, false)) + ranked_moves[i].first;
+			}
+			if (val > best_val) {
+				best_move_index = i;
+				best_val = val;
+			}
+		}
+	}
+
+	move = ranked_moves[best_move_index].second;
+	return move;
+}
+
+
 
 unsigned char maximax_moveX(state s, int depth) {
 	unsigned char move = 0;
@@ -415,6 +499,8 @@ unsigned char maximax_moveX(state s, int depth) {
 	return move;
 }
 
+
+
 //0 = No push direction
 //1=up, 2=down, 3=left, 4=right
 //5=UL, 6=UR, 7=DL, 8=DR
@@ -447,6 +533,7 @@ int get_push_dir(state s) {
 			dir = DOWN;
 		}
 	}
+
 	// if (DEBUG_VERBOSE) {
 	// 	cout << endl << endl;
 	// 	print_board(s);
@@ -526,6 +613,15 @@ int heuristicX(state s) {
 	int dir = get_push_dir(s);
 	//orient fixes dir and points up or UR (or none)
 	s = orient(s, dir);
+
+	//Very special case...
+	if (s.K == 37 && s.R == 40 && s.k == 55) {
+		dir = RIGHT;
+		s = orient(s, dir);
+	} else if (s.K == 29 && s.R == 16 && s.k == 15) {
+		dir = LEFT;
+		s = orient(s, dir);
+	}
 
 	unsigned char Krank = s.K % 8;
 	unsigned char Rrank = s.R % 8;
@@ -611,13 +707,10 @@ int heuristicX(state s) {
 	} else if (Rrank == krank) {
 		R_factor = 1000;
 	} else if (Rrank == krank-1) {
-		R_factor = 1000 * Rrank;//1k more for each row up.
-		R_factor += fd*fd*2;
-		if (Rfile == 0 || Rfile == 7) {
-			R_on_edge_factor = 55;
-		}
 		if (Krank > Rrank) {
-			K_factor = (7-Krank) * 100;
+			K_factor = (7-Krank) * 150;
+			//Trying to make K get out of bad spot
+			K_factor -= 300;
 		} else if (Rrank == Krank) {
 			//If the king is in the way...
 			if ((kfile < Kfile && Kfile < Rfile) ||
@@ -636,11 +729,24 @@ int heuristicX(state s) {
 				K_factor -= 45;
 			}
 		}
+		R_factor = 1000 * Rrank;//1k more for each row up.
+		R_factor += fd*fd*2;
+		if (Rfile == 0 || Rfile == 7) {
+			R_on_edge_factor = 55;
+			//TODO: look at kings for added bonus to the correct config.
+
+		}
+		
 	} else {//Rook below k, more than one rank
 		R_factor = 1000 * Rrank;//1k more for each row up.
 		R_factor += fd*fd*5;
+		//Strange case where rook makes a bad move...
+		if (Rrank == krank-2 && Krank > Rrank &&
+			(Rfile == kfile-1 || Rfile == kfile+1)) {
+			R_on_edge_factor = -1001;
+		}
 		if (Krank > krank) {
-			K_factor = (8-Krank) * 10;
+			K_factor = (8-Krank) * 150 - 200;
 		} else if (Krank == krank) {
 			K_factor = Krank * 30;
 		} else {
@@ -1449,7 +1555,9 @@ int test_play(state s, int max_turns) {
 			print_board(s);
 		}
 
-		move = moveY(s);
+		//move = moveY(s);
+		move = minimax_moveY(s, DEPTH);
+		//move = additive_minimax_moveY(s, DEPTH);
 		if (move == 255) {
 			if (in_checkmate(s)) {
 				cout << "Checkmate.\n";

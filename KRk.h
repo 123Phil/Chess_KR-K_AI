@@ -6,7 +6,7 @@
 
 #define VERBOSE_RESULTS true
 #define DEBUG_VERBOSE false
-#define DEPTH 1
+#define DEPTH 2
 
 enum DIR {NONE=0, UP, DOWN, LEFT, RIGHT, UL, UR, DL, DR};
 
@@ -47,7 +47,8 @@ void err(std::string msg);
 unsigned char moveX(state s);
 unsigned char moveY(state s);
 unsigned char ex_minimax_moveX(state s, int depth);
-unsigned char ex_minimax_moveY(state s, int depth);
+unsigned char minimax_moveY(state s, int depth);
+unsigned char additive_minimax_moveY(state s, int depth);
 unsigned char maximax_moveX(state s, int depth);
 int get_push_dir(state s);
 state orient(state s, int& dir);

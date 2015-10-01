@@ -1,6 +1,22 @@
 /* KRk initial board positions brute forcer.
 Author: Phillip Stewart
 
+This module is used to find initial board states which yield the highest moves
+	for player X to mate. There are two main functions, one is called when no
+	command line arguments are given, the other takes testCases.txt as a
+	command line argument. (or any other file with a list of test cases)
+
+To compile and run this module:
+$ make test
+$ ./find_init
+> displays the top 32 states from all possible
+$ ./find_init testCases.txt
+> displays results for the states given in the file
+
+By modifying the moveX and moveY calls in the stripped_test_play function,
+	you can quickly test differing search methods for finding moves.
+Also, modifying the defined DEPTH in KRk.h will yield different results.
+
 */
 
 
@@ -22,10 +38,14 @@ using namespace std;
 #define TRY_ADD_KING if(K_can_move(s,move)){moves.push_back(move);}
 
 
+/* Functions specific to this module */
+int stripped_test_play(state s, int max_turns);
+void print_state(state s);
 void print_states(vector< pair<int, state> > ranked_boards);
 void save_states_to_file(vector< pair<int, state> > ranked_boards);
 void run_finder();
-
+vector<state> get_states_from_file(string filename);
+void run_tester(string filename);
 
 
 /* Game controller for tests
@@ -37,44 +57,35 @@ int stripped_test_play(state s, int max_turns) {
 	bool MATE = false;
 	int num_turns = 0;
 	unsigned char move;
-
 	while (num_turns < max_turns) {
 		//Player X goes first.
 		move = moveX(s);
+		//move = maximax_moveX(s, DEPTH);
+		//move = ex_minimax_moveX(s, DEPTH);
 		s = make_move(s, move, true);
 
-		move = moveY(s);
+		//move = moveY(s);
+		move = minimax_moveY(s, DEPTH);
+		//move = additive_minimax_moveY(s, DEPTH);
+		
 		if (move == 255) {
-			// if (in_checkmate(s)) {
-			// 	cout << "Checkmate.\n";
-			// } else {
-			// 	cout << "Stalemate.\n";
-			// }
 			MATE = true;
+			num_turns++;
 			break;
 		}
 		s = make_move(s, move, false);
 		if (s.R == 255) {
-			// cout << "Draw. Checkmate no longer possible.\n";
-			// if (VERBOSE_RESULTS) {
-			// 	cout << "Player Y got the Rook!.\n";
-			// }
 			break;
 		}
 		num_turns++;
 	}
-
-	if (MATE) {
-		num_turns++;
-		//cout << "Mate on turn " << num_turns << ".\n";
-	}// else {
-		//cout << "Game concluded in draw after " << num_turns << " full turns.\n";
-	//}
-
 	return num_turns;
 }
 
 
+/* Prints a single state to stdout
+
+*/
 void print_state(state s) {
 	char buf[80];
 	int a,b,c,d,e,f;
@@ -89,6 +100,9 @@ void print_state(state s) {
 }
 
 
+/* Prints the ranked states to stdout
+
+*/
 void print_states(vector< pair<int, state> > ranked_boards) {
 	char buf[80];
 	state s;
@@ -109,9 +123,14 @@ void print_states(vector< pair<int, state> > ranked_boards) {
 }
 
 
+/* Saves states to file.
+Used for saving problematic start cases so that they can be quickly tested
+	without having to retest all cases again.
+
+*/
 void save_states_to_file(vector< pair<int, state> > ranked_boards) {
 	ofstream ofile;
-	ofile.open("testCases.txt");
+	ofile.open("testCases_worst.txt");
 	char buf[80];
 	state s;
 	int a,b,c,d,e,f, len;
@@ -131,6 +150,10 @@ void save_states_to_file(vector< pair<int, state> > ranked_boards) {
 }
 
 
+/* Test runner when no command line arguments
+Runs test_play on all possible starting boards.
+
+*/
 void run_finder() {
 	state s;
 	int turns = 0;
@@ -176,11 +199,70 @@ void run_finder() {
 }
 
 
+/* Read states from file and return a vector of states
+
+*/
+vector<state> get_states_from_file(string filename) {
+	ifstream infile;
+	infile.open(filename);
+	string line;
+	vector<state> states;
+	while (getline(infile, line)) {
+		int a,b,c,d,e,f,good;
+		good = sscanf(line.c_str(),"x.K(%d,%d),x.R(%d,%d),y.K(%d,%d)",&a,&b,&c,&d,&e,&f);
+		if (!good) {break;}
+		char K = (char)((a-1)*8 + (b-1));
+		char R = (char)((c-1)*8 + (d-1));
+		char k = (char)((e-1)*8 + (f-1));
+		state s(K, R, k);
+		if (s.is_valid()) {
+			states.push_back(s);
+		}
+	}
+
+	infile.close();
+	return states;
+}
+
+
+/* Test runner when supplied a file of test cases to check.
+
+*/
+void run_tester(string filename) {
+	vector<state> states = get_states_from_file(filename);
+	state s;
+	int turns = 0;
+	vector< pair<int, state> > ranked_boards;
+
+	for (int i=0; i<(int)states.size(); i++) {
+		s = states[i];
+		if (!s.is_valid()) {
+			continue;
+		} else if (kings_too_close(s) || y_in_check(s)) {
+			continue;
+		}
+		turns = stripped_test_play(s, 35);
+		ranked_boards.push_back(make_pair(turns, s));
+	}
+
+	sort(ranked_boards.begin(), ranked_boards.end());
+	reverse(ranked_boards.begin(), ranked_boards.end());
+
+	print_states(ranked_boards);
+	//save_states_to_file(ranked_boards);
+}
+
+
 /* Main function
 
 */
-int main() {
-	run_finder();
+int main(int argc, char** argv) {
+	if (argc == 1) {
+		run_finder();
+	} else {
+		run_tester(argv[1]);
+	}
 	return 0;
 }
+
 
