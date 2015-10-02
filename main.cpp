@@ -1,12 +1,5 @@
-/* KRk program for chess end-games with king & rook vs king
+/* KR-k program for chess end-games with king & rook vs king
 Author: Phillip Stewart
-
-TODO:
-test play function
-improve heuristics
-recurse, minimax (using top few and h(n) for probability!)
-const params that shouldn't change?
-
 
 The board state is represented by 3 chars, for K, R, and k
 	the x.K, x.R and y.K positions.
@@ -31,7 +24,9 @@ The board state is represented by 3 chars, for K, R, and k
 | 0| 8|16|24|32|40|48|56|
  -- -- -- -- -- -- -- --
 
-The player peices are printed as upper-case K and R for player X,
+state is a class defined in "helper.h"
+
+The player peices are defined as upper-case K and R for player X,
 	and a lower-case k for player Y.
 
 It is assumed that player Y chooses the board setup, and player X goes first.
@@ -53,32 +48,44 @@ Moves are entered with Portable Game Notation.
 	You shouldn't enter additional information, such as + or # for check/mate
 	Just <peice><col><row>
 
-The game summary is saved to file in Portable Game Notation.
+The game summary is printed or saved to file in Portable Game Notation.
+
+To compile and run:
+$ make main
+$ ./main
+-You will then be prompted with a few questions, and the program will run.
+To simply test the case defined in testCase.txt, run:
+$ ./main <in
 
 */
 
+
 #include <iostream>
-#include "KRk.h"
+#include "helper.h"
+#include "play.h"
+
 
 int main() {
-	//test_heuristics();
-	//test_orient(get_state_from_file());
-
+	//Is this a test?
 	bool is_test = get_is_test();
 	bool x;
 	if (!is_test) {
+		//If it's not a test, what side are you playing?
 		x = ask_x();
 	}
+	//Maximum number of turns?
 	unsigned int max_turns = get_max_turns();
+	//Gets either from stdin or file...
 	state s = get_initial_state();
 	if (kings_too_close(s)) {
 		std::cout << "Invalid initial board...\n";
 	}
 
-	//verify_lam(s);
 	if (is_test) {
+		//Computer runs both sides
 		test_play(s, max_turns);
-	} else { //competition play
+	} else {
+		//Competition play
 		play(s, max_turns, !x);
 	}
 	return 0;

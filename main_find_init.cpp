@@ -7,16 +7,15 @@ This module is used to find initial board states which yield the highest moves
 	command line argument. (or any other file with a list of test cases)
 
 To compile and run this module:
-$ make test
-$ ./find_init
+$ make main_find
+$ ./main_find
 > displays the top 32 states from all possible
-$ ./find_init testCases.txt
+$ ./main_find testCases.txt
 > displays results for the states given in the file
 
 By modifying the moveX and moveY calls in the stripped_test_play function,
 	you can quickly test differing search methods for finding moves.
-Also, modifying the defined DEPTH in KRk.h will yield different results.
-
+Also, modifying the defined DEPTH in helper.h will yield different results.
 */
 
 
@@ -26,16 +25,11 @@ Also, modifying the defined DEPTH in KRk.h will yield different results.
 #include <sstream>
 #include <iomanip>
 #include <vector>
-#include <cstdlib>
-#include <cstdio>
-#include <cctype>
-#include <exception>
 #include <utility>
-#include "KRk.h"
+#include "helper.h"
+#include "move.h"
+#include "play.h"
 using namespace std;
-
-#define TRY_ADD_MOVE_Y s2=make_move(s,move,false);if(!y_in_check(s2)&&!kings_too_close(s2)){moves.push_back(move);}
-#define TRY_ADD_KING if(K_can_move(s,move)){moves.push_back(move);}
 
 
 /* Functions specific to this module */
@@ -83,9 +77,7 @@ int stripped_test_play(state s, int max_turns) {
 }
 
 
-/* Prints a single state to stdout
-
-*/
+/* Prints a single state to stdout */
 void print_state(state s) {
 	char buf[80];
 	int a,b,c,d,e,f;
@@ -100,14 +92,11 @@ void print_state(state s) {
 }
 
 
-/* Prints the ranked states to stdout
-
-*/
+/* Prints the ranked states to stdout */
 void print_states(vector< pair<int, state> > ranked_boards) {
 	char buf[80];
 	state s;
 	int a,b,c,d,e,f;
-
 	for (int i=0; i<(int)ranked_boards.size(); i++) {
 		s = ranked_boards[i].second;
 		a = s.K/8 + 1;
@@ -119,14 +108,12 @@ void print_states(vector< pair<int, state> > ranked_boards) {
 		sprintf(buf,"x.K(%d,%d),x.R(%d,%d),y.K(%d,%d)\n",a,b,c,d,e,f);
 		cout << "Rank: " << ranked_boards[i].first << "\t Board: " << buf;
 	}
-
 }
 
 
 /* Saves states to file.
 Used for saving problematic start cases so that they can be quickly tested
 	without having to retest all cases again.
-
 */
 void save_states_to_file(vector< pair<int, state> > ranked_boards) {
 	ofstream ofile;
@@ -134,7 +121,6 @@ void save_states_to_file(vector< pair<int, state> > ranked_boards) {
 	char buf[80];
 	state s;
 	int a,b,c,d,e,f, len;
-
 	for (int i=0; i<(int)ranked_boards.size(); i++) {
 		s = ranked_boards[i].second;
 		a = s.K/8 + 1;
@@ -152,7 +138,11 @@ void save_states_to_file(vector< pair<int, state> > ranked_boards) {
 
 /* Test runner when no command line arguments
 Runs test_play on all possible starting boards.
-
+-Actually tests 1/4 of all boards since it was the easiest reduction
+	while still testing all variations.
+Before running test_play, checks to see if the board is valid.
+This is very useful for finding problems with the heuristic and search functions.
+It will show the longest running tests (capped at 32 for now)
 */
 void run_finder() {
 	state s;
@@ -173,10 +163,6 @@ void run_finder() {
 					continue;
 				}
 				turns = stripped_test_play(s, 35);
-				// if (turns == 50) {
-				// 	print_state(s);
-				// 	return;
-				// }
 				if (turns > lower_bound) {
 					ranked_boards.push_back(make_pair(turns, s));
 				}
@@ -199,9 +185,7 @@ void run_finder() {
 }
 
 
-/* Read states from file and return a vector of states
-
-*/
+/* Read states from file and return a vector of states */
 vector<state> get_states_from_file(string filename) {
 	ifstream infile;
 	infile.open(filename);
@@ -219,14 +203,16 @@ vector<state> get_states_from_file(string filename) {
 			states.push_back(s);
 		}
 	}
-
 	infile.close();
 	return states;
 }
 
 
-/* Test runner when supplied a file of test cases to check.
-
+/* Test runner when supplied a file of test cases to check. 
+Similar to run_finder above, but instead of testing all boards,
+	just tests the boards defined in the test case file.
+This is useful when testing problematic starting positions
+	with searching at great depth.
 */
 void run_tester(string filename) {
 	vector<state> states = get_states_from_file(filename);
@@ -254,7 +240,9 @@ void run_tester(string filename) {
 
 
 /* Main function
-
+If supplied a command-line argument <testcase.txt>,
+	it will try to run the tests defined there.
+Otherwise, run tests on all states.
 */
 int main(int argc, char** argv) {
 	if (argc == 1) {
