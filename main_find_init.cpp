@@ -59,8 +59,8 @@ int stripped_test_play(state s, int max_turns) {
 		s = make_move(s, move, true);
 
 		//move = moveY(s);
-		move = minimax_moveY(s, DEPTH);
-		//move = additive_minimax_moveY(s, DEPTH);
+		//move = minimax_moveY(s, DEPTH);
+		move = additive_minimax_moveY(s, DEPTH);
 		
 		if (move == 255) {
 			MATE = true;

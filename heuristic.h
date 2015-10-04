@@ -7,6 +7,7 @@ int heuristicX(state s);
 int heuristicY(state s);
 int get_push_dir(state s);
 state orient(state s, int& dir);
+state dir_and_orientY(state s);
 void translate_diag(unsigned char& Krank, unsigned char& Kfile,
 					unsigned char& Rrank, unsigned char& Rfile);
 

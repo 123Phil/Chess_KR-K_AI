@@ -59,7 +59,8 @@ void play(state s, int max_turns, bool x_ai) {
 
 		//Player Y's turn:
 		if (!x_ai) {
-			move = moveY(s);
+			//move = moveY(s);
+			move = additive_minimax_moveY(s, DEPTH);
 		} else {
 			if (in_checkmate(s)) {
 				cout << "Checkmate.\n";
@@ -139,6 +140,8 @@ int test_play(state s, int max_turns) {
 	while (num_turns < max_turns) {
 		//Player X goes first.
 		move = moveX(s);
+		//move = ex_minimax_moveX(s, DEPTH);
+		//move = maximax_moveX(s, DEPTH);
 		x_move_str = convert_move_to_PGN(s, move, true);
 		s = make_move(s, move, true);
 		if (VERBOSE_RESULTS) {
@@ -147,8 +150,8 @@ int test_play(state s, int max_turns) {
 		}
 
 		//move = moveY(s);
-		move = minimax_moveY(s, DEPTH);
-		//move = additive_minimax_moveY(s, DEPTH);
+		//move = minimax_moveY(s, DEPTH);
+		move = additive_minimax_moveY(s, DEPTH);
 		if (move == 255) {
 			if (in_checkmate(s)) {
 				cout << "Checkmate.\n";

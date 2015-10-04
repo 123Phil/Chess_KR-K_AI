@@ -32,6 +32,12 @@ int heuristicX(state s) {
 	} else if (s.K == 29 && s.R == 16 && s.k == 15) {
 		dir = LEFT;
 		s = orient(s, dir);
+	} else if (s.k == 46 && s.R == 32) {//Another special case to handle...
+		dir = RIGHT;
+		s = orient(s, dir);
+	} else if (s.k == 22 && s.R == 24) {
+		dir = LEFT;
+		s = orient(s, dir);
 	}
 
 	unsigned char Krank = s.K % 8;
@@ -41,6 +47,7 @@ int heuristicX(state s) {
 	unsigned char Rfile = s.R / 8;
 	unsigned char kfile = s.k / 8;
 
+	//obsolete now?? 
 	if (dir == UR) {
 		if (Rfile == kfile-1) {
 			translate_diag(Krank, Kfile, Rrank, Rfile);
@@ -115,6 +122,9 @@ int heuristicX(state s) {
 	//Push k toward top with R.
 	if (Rrank > krank) {
 		R_factor = 0;
+		if (Rfile == 0 || Rfile == 7) {
+			R_on_edge_factor = 250 + rd*rd + fd*fd;
+		}
 	} else if (Rrank == krank) {
 		R_factor = 1000;
 	} else if (Rrank == krank-1) {
@@ -126,7 +136,7 @@ int heuristicX(state s) {
 			//If the king is in the way...
 			if ((kfile < Kfile && Kfile < Rfile) ||
 				(kfile > Kfile && Kfile > Rfile)) {
-				K_factor = Krank * -20;
+				K_factor = Krank * -400;
 			} else {
 				K_factor = 800;// + ((Kfile-Rfile)*(Kfile-Rfile)); ??
 			}
@@ -199,6 +209,100 @@ int heuristicX(state s) {
 }
 
 
+/* Third attempt at Heuristic for player Y
+Input:	state s - current state of the board
+Output:	int - the value of the board for player Y
+			A higher value means the board state is more desireable.
+			Bad positions should return a relatively low number
+			and good positions should return a high number.
+Capture Rook: 65536
+
+Aim for:
+center, no R: ~7k
+edge: ~2k 	(corner: ~1500, middle ~2k)
+R block: -1k
+K factor ~ -500 to +500
+
+Get these derived to about-
+-check push: ? -500
+-checkmate conditions: 0
+
+*/
+int heuristicY(state s) {
+	//Always capture rook if possible:
+	if (s.R == 255) {
+		return 65536;
+	}
+
+	int h = 0;
+	s = dir_and_orientY(s);
+
+	unsigned char Krank = s.K % 8;
+	unsigned char Rrank = s.R % 8;
+	unsigned char krank = s.k % 8;
+	unsigned char Kfile = s.K / 8;
+	unsigned char Rfile = s.R / 8;
+	unsigned char kfile = s.k / 8;
+
+	unsigned char y_dist = krank * 2;
+	unsigned char x_dist = kfile * 2;
+	if (y_dist > 7) {
+		y_dist -= 7;
+	} else {
+		y_dist = 7 - y_dist;
+	}
+	if (x_dist > 7) {
+		x_dist -= 7;
+	} else {
+		x_dist = 7 - x_dist;
+	}
+
+	int dist_from_c = x_dist*x_dist + y_dist*y_dist;
+	int dist_factor = (((100 - dist_from_c) * (100 - dist_from_c)) / 2) + 2000;
+	int R_factor = 0;
+	int K_factor = 0;
+	// If blocked by rook move toward rook (unless king trap)
+	if (krank > 3 && Rrank == krank-1) {//Rook below
+		if (Krank == krank - 2 && kfile == Kfile) {//trap
+			if (Rfile == kfile + 1 || Rfile == kfile - 1) {
+				R_factor = 500;
+			} else {
+				R_factor = -1000;
+				K_factor = -1000;
+			}
+		} else {//Move toward rook
+			if (Rfile < kfile) {
+				R_factor = (7 - (kfile - Rfile)) * 150;
+			} else {
+				R_factor = (7 - (Rfile - kfile)) * 150;
+			}
+			if (Krank < Rrank) {
+				if (Krank == krank-2) {
+					K_factor = 0;
+				} else {
+					K_factor = 250;
+				}
+			} else {
+				K_factor = 500;
+			}
+		}
+	} else if (Rrank == krank || Rfile == kfile) {//same rank as rook:
+		//if (y_in_check(s)) {}//should never call heuristic from check...
+		R_factor = 100;
+	} else if (Rrank > krank) {
+		// ?? not sure what to make of this part yet...
+		R_factor = 500;
+	}//else R_factor = 0;
+
+	if (krank == 0 || krank == 7 || kfile == 0 || kfile == 7) {
+		dist_factor -= 500;
+	}
+
+	h = dist_factor + R_factor + K_factor;
+	return h;
+}
+
+
 /* Another attempt at Heuristic for player Y
 Input:	state s - current state of the board
 Output:	int - the value of the board for player Y
@@ -215,7 +319,7 @@ In rook row && check??: 50
 In rook row && check && pin: 0 //Push & mate
 In rook row, no check: 1500
 */
-int heuristicY(state s) {
+int heuristicY_old2(state s) {
 	//Always capture rook if possible:
 	if (s.R == 255) {
 		return 65536;
@@ -504,6 +608,111 @@ int get_push_dir(state s) {
 	int dir = NONE;
 	unsigned char krank = s.k % 8;
 	unsigned char kfile = s.k / 8;
+	unsigned char Rrank = s.R % 8;
+	unsigned char Rfile = s.R / 8;
+
+	if (krank == kfile) {
+		if (krank < 4) {
+			if (Rrank == Rfile) {
+				dir = DL;
+			} else if (kfile == Rfile-1) {
+				dir = LEFT;
+			} else if (krank == Rrank-1) {
+				dir = DOWN;
+			} else if (krank == Rrank+1 && Rfile == 7) {
+				dir = UP;
+			} else {
+				dir = DL;
+			}
+		} else {
+			if (Rrank == Rfile) {
+				dir = UR;
+			} else if (kfile == Rfile+1) {
+				dir = RIGHT;
+			} else if (krank == Rrank+1) {
+				dir = UP;
+			} else if (krank == Rrank-1 && Rfile == 0) {
+				dir = DOWN;
+			} else {
+				dir = UR;
+			}
+		}
+	} else if (7-krank == kfile) {
+		if (krank < 4) {
+			if (7-Rrank == Rfile) {
+				dir = DR;
+			} else if (kfile == Rfile+1) {
+				dir = RIGHT;
+			} else if (krank == Rrank-1) {
+				dir = DOWN;
+			} else if (krank == Rrank+1 && Rfile == 0) {
+				dir = UP;
+			} else {
+				dir = DR;
+			}
+		} else {
+			if (7-Rrank == Rfile) {
+				dir = UL;
+			} else if (kfile == Rfile-1) {
+				dir = LEFT;
+			} else if (krank == Rrank+1) {
+				dir = UP;
+			} else if (krank == Rrank-1 && Rfile == 7) {
+				dir = DOWN;
+			} else {
+				dir = UL;
+			}
+		}
+	} else if (krank > kfile) {
+		if (krank > 7-kfile) {
+			dir = UP;
+			if (Rrank == 0) {
+				if (Rfile == kfile+1) {
+					dir = LEFT;
+				} else if (Rfile == kfile-1) {
+					dir = RIGHT;
+				}
+			}
+		} else {
+			dir = LEFT;
+			if (Rfile == 7) {
+				if (Rrank == krank+1) {
+					dir = DOWN;
+				} else if (Rrank == krank-1) {
+					dir = UP;
+				}
+			}
+		}
+	} else {
+		if (krank > 7-kfile) {
+			dir = RIGHT;
+			if (Rfile == 0) {
+				if (Rrank == krank+1) {
+					dir = DOWN;
+				} else if (Rrank == krank-1) {
+					dir = UP;
+				}
+			}
+		} else {
+			dir = DOWN;
+			if (Rrank == 7) {
+				if (Rfile == kfile+1) {
+					dir = LEFT;
+				} else if (Rfile == kfile-1) {
+					dir = RIGHT;
+				}
+			}
+		}
+	}
+	return dir;
+}
+
+
+/* a failed attempt to simplify push_dir */
+int get_push_dir_simple(state s) {
+	int dir = NONE;
+	unsigned char krank = s.k % 8;
+	unsigned char kfile = s.k / 8;
 	if (krank == kfile) {
 		if (krank < 4) {
 			dir = DL;
@@ -567,6 +776,124 @@ state orient(state s, int& dir) {
 		dir = UP;
 	} else {
 		dir = UR;
+	}
+	return s;
+}
+
+
+/* Orient the board for plyaer Y heuristic
+Goal is to push down and center.
+If Rook is forcing k, return s such that krank = Rrank+1
+Else, return s such that k in quadrant 1.
+dir is the direction k is from center
+	ex: k above middle == UP
+*/
+state dir_and_orientY(state s) {
+	//find out where k is, where R is...
+	int dir = NONE;
+	unsigned char krank = s.k % 8;
+	unsigned char kfile = s.k / 8;
+	unsigned char Rrank = s.R % 8;
+	unsigned char Rfile = s.R / 8;
+
+	if (krank == kfile) {
+		if (krank < 4) {
+			if (Rfile == kfile+1) {
+				dir = LEFT;
+			} else {
+				dir = DL;
+			}
+		} else {
+			if (Rfile == kfile-1) {
+				dir = RIGHT;
+			} else {
+				dir = UR;
+			}
+		}
+	} else if (7-krank == kfile) {
+		if (krank < 4) {
+			if (Rrank == krank+1) {
+				dir = DOWN;
+			} else {
+				dir = DR;
+			}
+		} else {
+			if (Rrank == krank-1) {
+				dir = UP;
+			} else {
+				dir = UL;
+			}
+		}
+	} else {//Not on a diagonal.
+		//check if R == ...-1
+		if (krank > 4 && Rrank == krank-1) {
+			if ((kfile > 4 && Rfile == kfile-1) && Rfile > Rrank) {
+				dir = RIGHT;
+			} else if ((kfile < 3 && Rfile == kfile+1) && (7-Rfile) > Rrank) {
+				dir = LEFT;
+			} else {
+				dir = UP;
+			}
+		} else if (krank < 3 && Rrank == krank+1) {
+			if ((kfile > 4 && Rfile == kfile-1) && Rfile > (7-Rrank)) {
+				dir = RIGHT;
+			} else if ((kfile < 3 && Rfile == kfile+1) && Rfile < Rrank) {
+				dir = LEFT;
+			} else {
+				dir = DOWN;
+			}
+		} else if (kfile > 4 && Rfile == kfile-1) {
+			dir = RIGHT;
+		} else if (kfile < 3 && Rfile == kfile+1) {
+			dir = LEFT;
+		} else if (krank > 5 && Rrank == krank-2) {//check if R == ...-2
+			dir = UP;
+		} else if (krank < 2 && Rrank == krank+2) {
+			dir = DOWN;
+		} else if (kfile > 5 && Rfile == kfile-2) {
+			dir = RIGHT;
+		} else if (kfile < 2 && Rfile == kfile+2) {
+			dir = LEFT;
+		} else if (krank > kfile) { // Rook is not a factor in dir.
+			if (krank > 7-kfile) {
+				dir = UP;
+			} else {
+				dir = LEFT;
+			}
+		} else {
+			if (krank > 7-kfile) {
+				dir = RIGHT;
+			} else {
+				dir = DOWN;
+			}
+		}
+	}
+
+	//Rotate the board so k is on top
+	switch (dir) {
+		case DOWN:
+		case DL:
+			//rotate 180
+			s.k = (7 - s.k%8) + (7 - s.k/8)*8;
+			s.K = (7 - s.K%8) + (7 - s.K/8)*8;
+			s.R = (7 - s.R%8) + (7 - s.R/8)*8;
+			break;
+		case LEFT:
+		case UL:
+			//rotate 90 clockwise
+			s.k = (7 - s.k/8) + (s.k%8)*8;
+			s.K = (7 - s.K/8) + (s.K%8)*8;
+			s.R = (7 - s.R/8) + (s.R%8)*8;
+			break;
+		case RIGHT:
+		case DR:
+			//rotate 90 cc
+			s.k = (s.k/8) + (7-s.k%8)*8;
+			s.K = (s.K/8) + (7-s.K%8)*8;
+			s.R = (s.R/8) + (7-s.R%8)*8;
+			break;
+		default:
+			break;
 	}
 	return s;
 }
