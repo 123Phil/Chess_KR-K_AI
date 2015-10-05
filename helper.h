@@ -33,6 +33,7 @@ bool kings_too_close(state s);
 bool y_in_check(state s);
 bool in_checkmate(state s);
 void print_board(state s);
+std::string board_string(state s);
 bool get_is_test();
 unsigned int get_max_turns();
 state get_initial_state();

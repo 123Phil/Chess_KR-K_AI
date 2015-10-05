@@ -410,6 +410,29 @@ void print_board(state s) {
 }
 
 
+string board_string(state s) {
+	stringstream ss;
+	for (int row=8; row>0; row--) {
+		ss << "  -- -- -- -- -- -- -- --\n" << row;
+		for (int col=0; col<8; col++) {
+			if (s.K == col*8 + row-1) {
+				ss << "| K";
+			} else if (s.R == col*8 + row-1) {
+				ss << "| R";
+			} else if (s.k == col*8 + row-1) {
+				ss << "| k";
+			} else {
+				ss << "|  ";
+			}
+		}
+		ss << "|\n";
+	}
+	ss << "  -- -- -- -- -- -- -- --\n" << "  a  b  c  d  e  f  g  h\n";
+	string board = ss.str();
+	return board;
+}
+
+
 /* Determine whether we are running a test */
 bool get_is_test() {
 	string response;

@@ -1,10 +1,18 @@
 /* The heuristic functions for players X and Y.
 Author: Phillip Stewart
 
-These functions are highly customized...
+These functions are highly customized.
 
-TODO: update Y with an orient and better AI to push against Rook
+I went through many iterations and versions of these heuristics.
+The goal was to replicate human play without search/branch.
+Player X should use the R and K in concert to push the k
+	to the edge. R should always be 1 row/col toward center from k.
+	Eventually k is checkmated on the edge.
+Player Y should avoid moving toward the edge, and annoy R.
 
+There is a lot more progress to be made with Y than with X...
+
+I left older versions of the heuristics in here, but they can be disregarded.
 */
 
 
@@ -25,14 +33,15 @@ int heuristicX(state s) {
 	//orient fixes dir and points up or UR (or none)
 	s = orient(s, dir);
 
-	//Very special case...
+	//Old special cases...
+	// I think rewriting get_push_dir() and orient() made this obsolete...
 	if (s.K == 37 && s.R == 40 && s.k == 55) {
 		dir = RIGHT;
 		s = orient(s, dir);
 	} else if (s.K == 29 && s.R == 16 && s.k == 15) {
 		dir = LEFT;
 		s = orient(s, dir);
-	} else if (s.k == 46 && s.R == 32) {//Another special case to handle...
+	} else if (s.k == 46 && s.R == 32) {//Another special case...
 		dir = RIGHT;
 		s = orient(s, dir);
 	} else if (s.k == 22 && s.R == 24) {
@@ -99,9 +108,9 @@ int heuristicX(state s) {
 					prot_factor = Rfile * 5;
 					prot_factor += (Kfile - Rfile) * 10;
 				}
-			} else {
-				err("Reached what should be a dead block in player X's heuristic.");
-			}
+			}// else {
+			// 	err("Reached what should be a dead block in player X's heuristic.");
+			// }
 		} else {
 			return 0;
 		}
@@ -111,10 +120,10 @@ int heuristicX(state s) {
 		(Rfile == kfile && Rfile == 7 && Kfile == 5 && Krank == krank)) {
 		//Checkmate!
 		return 65536;
-	} else if ((Rrank == krank && Krank == krank - 2 && Kfile == kfile) ||
-		(Rrank == krank && Krank == krank + 2 && Kfile == kfile) ||
-		(Rfile == kfile && Kfile == kfile - 2 && Krank == krank) ||
-		(Rfile == kfile && Kfile == kfile + 2 && Krank == krank)) {
+	} else if ((Rrank > 3 && Rrank == krank && Krank == krank - 2 && Kfile == kfile) ||
+		(Rrank < 4 && Rrank == krank && Krank == krank + 2 && Kfile == kfile) ||
+		(Rfile > 3 && Rfile == kfile && Kfile == kfile - 2 && Krank == krank) ||
+		(Rfile < 4 && Rfile == kfile && Kfile == kfile + 2 && Krank == krank)) {
 		//Force k to edge.
 		return 32768;
 	}
@@ -217,7 +226,7 @@ Output:	int - the value of the board for player Y
 			and good positions should return a high number.
 Capture Rook: 65536
 
-Aim for:
+Aiming for:
 center, no R: ~7k
 edge: ~2k 	(corner: ~1500, middle ~2k)
 R block: -1k
@@ -287,12 +296,13 @@ int heuristicY(state s) {
 			}
 		}
 	} else if (Rrank == krank || Rfile == kfile) {//same rank as rook:
-		//if (y_in_check(s)) {}//should never call heuristic from check...
+		//if (y_in_check(s)) {}//heuristic not called from check...
 		R_factor = 100;
 	} else if (Rrank > krank) {
-		// ?? not sure what to make of this part yet...
-		R_factor = 500;
-	}//else R_factor = 0;
+		R_factor = 800;
+	} else {//TODO: play around with the above and below values...
+		R_factor = 600;
+	}
 
 	if (krank == 0 || krank == 7 || kfile == 0 || kfile == 7) {
 		dist_factor -= 500;
@@ -332,9 +342,6 @@ int heuristicY_old2(state s) {
 	unsigned char kfile = s.k / 8;
 	unsigned char rank2 = krank * 2;
 	unsigned char file2 = kfile * 2;
-
-	//TODO: rewrite for orient??? maybe..
-	//  which means, make a get_Y_dir()...
 
 	// If blocked by rook move toward rook (unless king trap)
 	if (krank < 3 && Rrank == krank + 1) {//Rook above

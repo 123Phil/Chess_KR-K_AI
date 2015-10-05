@@ -10,6 +10,9 @@ Each function calls the move search functions, of which I wrote many.
 
 
 #include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
 #include <iomanip>
 #include <cctype>
 #include <sstream>
@@ -17,6 +20,7 @@ Each function calls the move search functions, of which I wrote many.
 #include "move.h"
 #include "play.h"
 using namespace std;
+
 
 
 /* Game controller for competition
@@ -33,6 +37,7 @@ void play(state s, int max_turns, bool x_ai) {
 	string x_move_str, y_move_str, response;
 	vector<string> summary;
 	stringstream ss;
+	string initial_board = board_string(s);
 	while (num_turns < max_turns) {
 		//Player X goes first.
 		if (x_ai) {
@@ -122,6 +127,7 @@ void play(state s, int max_turns, bool x_ai) {
 			cout << summary[i] << endl;
 		}
 	}
+	save_results(initial_board, summary);
 }
 
 
@@ -130,13 +136,14 @@ Controls the play of the game. Runs automatically choosing best plays.
 Input:	state s - initial state of the board
 		int max_turns - maximum moves per player allowed.
 */
-int test_play(state s, int max_turns) {
+void test_play(state s, int max_turns) {
 	bool MATE = false;
 	int num_turns = 0;
 	unsigned char move;
 	string x_move_str, y_move_str;
 	vector<string> summary;
 	stringstream ss;
+	string initial_board = board_string(s);
 	while (num_turns < max_turns) {
 		//Player X goes first.
 		move = moveX(s);
@@ -200,6 +207,18 @@ int test_play(state s, int max_turns) {
 			cout << summary[i] << endl;
 		}
 	}
-	return num_turns;
+	save_results(initial_board, summary);
+	return;// num_turns;
+}
+
+
+void save_results(string initial_board, vector<string> summary) {
+	ofstream ofile;
+	ofile.open("gameResults.txt");
+	ofile << "Initial board:\n" << initial_board << "\nGame summary:\n";
+	for (int i=0; i < (int)summary.size(); i++) {
+		ofile << summary[i] << endl;
+	}
+	ofile.close();
 }
 

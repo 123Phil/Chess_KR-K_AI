@@ -12,8 +12,13 @@ Attempts at search functions are included after...
 	heuristics are designed to yield moves which adhere to natural play.
 	As such, the heuristics of estimated future states only serve to cloud the
 		AI's immediate logic.
-	So I have elected not to use sophisticated searching in my final program;
-		the play() and test_play() functions will call moveX and moveY.
+	I have elected not to use sophisticated searching for player X, and instead
+		play() and test_play() call moveY() which picks the highest ranked next
+		move.
+	Player Ys AI uses the additive_minimax_moveY() which seems to perform only
+		slightly better than the simple moveY() function.
+		I have elected to use this additive minimax in competition,
+		even though I am unsure how it will perform against other AI.
 */
 
 
