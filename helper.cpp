@@ -591,8 +591,8 @@ unsigned char convert_PGN_to_char(string square) {
 	char rank, file;
 	file = square[0] - 'a';
 	rank = square[1] - '1';
-	if (file < 'a' || file > 'h' ||
-		rank < '1' || rank > '8') {
+	if (file < 0 || file > 7 ||
+		rank < 0 || rank > 7) {
 		err("Invalid coordinate.");
 	}
 	c = (unsigned char)(file*8 + rank);
